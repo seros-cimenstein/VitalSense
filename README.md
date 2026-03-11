@@ -12,4 +12,8 @@ Event-Driven Architecture processing continuous streams of device telemetry data
 * Emergency SOS: Automated alerts to family members and a Doctor Connect portal.
 
 ## Team Members
+* Şeref Çimen
 * Onur Ateş
+* Sida Kılıçarslan
+* Hasan Deniz Karagöl
+
