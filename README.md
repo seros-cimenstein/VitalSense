@@ -13,6 +13,4 @@ Event-Driven Architecture processing continuous streams of device telemetry data
 
 ## Team Members
 * Sida Kılıçaslan
-* Onur Ateş
-* Şeref Çimen
-* Hasan Deniz Karagöl
+
