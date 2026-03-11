@@ -3,7 +3,7 @@
 VitalSense is a personal health monitoring application that continuously analyzes wearable sensor data to detect health anomalies.
 
 ## Core Architecture
-Event-Driven Architecture processing continuous streams of device telemetry data in real-time.
+Event-Driven Architecture handling real-time continuous streams of device telemetry.
 
 ## Key Features
 * Wearable Integration: Automated real-time fetching of heart rate and steps via BLE/API.
