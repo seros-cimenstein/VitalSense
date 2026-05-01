@@ -26,9 +26,12 @@
         <span class="brand-sub">active health protection</span>
       </div>
     </div>
-    <div class="topbar-status">
-      <span class="dot dot-live"></span>
-      <span id="status-text">monitoring</span>
+    <div class="topbar-right">
+      <div class="topbar-status">
+        <span class="dot dot-live"></span>
+        <span id="status-text">monitoring</span>
+      </div>
+      <button id="logout-btn" class="btn-ghost" style="font-size:12px">sign out</button>
     </div>
   </header>
 
@@ -78,9 +81,12 @@
             <h1 id="patient-name">—</h1>
             <p id="patient-meta" class="patient-meta">—</p>
           </div>
-          <div class="patient-bmi">
-            <span class="metric-label">BMI</span>
-            <span id="patient-bmi" class="metric-value-mono">—</span>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div class="patient-bmi">
+              <span class="metric-label">BMI</span>
+              <span id="patient-bmi" class="metric-value-mono">—</span>
+            </div>
+            <button id="delete-patient-btn" class="btn-ghost" style="font-size:12px;color:var(--warn)">delete</button>
           </div>
         </header>
 
@@ -178,7 +184,7 @@
             <span id="trend-count" class="hint">0 readings</span>
           </header>
           <div class="chart-wrap">
-            <canvas id="trend-chart" width="860" height="260"></canvas>
+            <canvas id="trend-chart"></canvas>
           </div>
         </section>
 

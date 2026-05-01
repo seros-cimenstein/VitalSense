@@ -27,6 +27,28 @@ class ConsoleNotifier:
         return True
 
 
+class TwilioNotifier:
+    """Delivers SMS via Twilio. Falls back gracefully on send errors."""
+
+    def __init__(self, account_sid: str, auth_token: str, from_number: str) -> None:
+        from twilio.rest import Client
+        self._client = Client(account_sid, auth_token)
+        self._from = from_number
+
+    def send(self, recipient_contact: str, message: str) -> bool:
+        try:
+            self._client.messages.create(
+                to=recipient_contact,
+                from_=self._from,
+                body=message,
+            )
+            print(f"[twilio -> {recipient_contact}] sent")
+            return True
+        except Exception as exc:
+            print(f"[twilio -> {recipient_contact}] FAILED: {exc}")
+            return False
+
+
 class NotificationService:
     """Wraps a Notifier with structured methods for each alert kind."""
 

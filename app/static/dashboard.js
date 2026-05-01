@@ -1,17 +1,39 @@
 /* VitalSense dashboard — vanilla JS client. */
 
+// ----- auth -----------------------------------------------------------------
+
+const TOKEN_KEY = "vs_token";
+
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+function authHeaders() {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+function handleUnauthorized() {
+  localStorage.removeItem(TOKEN_KEY);
+  window.location.replace("/login");
+}
+
+if (!getToken()) { window.location.replace("/login"); }
+
+// ----- api ------------------------------------------------------------------
+
 const api = {
   async get(path) {
-    const r = await fetch(`/api${path}`);
+    const r = await fetch(`/api${path}`, { headers: { ...authHeaders() } });
+    if (r.status === 401) { handleUnauthorized(); return null; }
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return r.json();
   },
   async post(path, body) {
     const r = await fetch(`/api${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: body ? JSON.stringify(body) : undefined,
     });
+    if (r.status === 401) { handleUnauthorized(); return null; }
     if (!r.ok) {
       const text = await r.text();
       throw new Error(`${r.status} ${path}: ${text}`);
@@ -21,23 +43,29 @@ const api = {
   async put(path, body) {
     const r = await fetch(`/api${path}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(body),
     });
+    if (r.status === 401) { handleUnauthorized(); return null; }
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return r.json();
   },
   async patch(path, body) {
     const r = await fetch(`/api${path}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(body),
     });
+    if (r.status === 401) { handleUnauthorized(); return null; }
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return r.json();
   },
   async delete(path) {
-    const r = await fetch(`/api${path}`, { method: "DELETE" });
+    const r = await fetch(`/api${path}`, {
+      method: "DELETE",
+      headers: { ...authHeaders() },
+    });
+    if (r.status === 401) { handleUnauthorized(); return; }
     if (!r.ok) throw new Error(`${r.status} ${path}`);
   },
 };
@@ -692,6 +720,40 @@ $("assign-doctor-save").addEventListener("click", async () => {
   $("modal-assign-doctor").hidden = true;
   await refreshContacts();
 });
+
+// ----- delete patient ---------------------------------------------------
+
+$("delete-patient-btn").addEventListener("click", async () => {
+  if (!activePatient) return;
+  if (!confirm(`Delete ${activePatient.name}? This cannot be undone.`)) return;
+  await api.delete(`/patients/${activePatient.id}`);
+  activePatient = null;
+  stopTelemetryStream();
+  stopCountdown();
+  if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+  patientView.hidden = true;
+  thresholdCard.hidden = true;
+  emptyState.hidden = false;
+  await refreshPatients();
+});
+
+// ----- logout -----------------------------------------------------------
+
+$("logout-btn").addEventListener("click", () => {
+  localStorage.removeItem(TOKEN_KEY);
+  window.location.replace("/login");
+});
+
+// ----- responsive trend chart -------------------------------------------
+
+function resizeChart() {
+  const canvas = $("trend-chart");
+  const wrap = canvas.parentElement;
+  canvas.width = wrap.clientWidth || 860;
+  canvas.height = 260;
+}
+
+new ResizeObserver(resizeChart).observe($("trend-chart").parentElement);
 
 // ----- utils ------------------------------------------------------------
 

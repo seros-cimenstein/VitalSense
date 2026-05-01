@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_engine, get_repo, get_sos
+from app.auth import require_auth
 from app.core import AnomalyDetectionEngine, BreachReason
 from app.db import Repository
 from app.models import (
@@ -23,7 +24,11 @@ from app.models import (
 from app.services import SOSService
 
 
-router = APIRouter(prefix="/api", tags=["vitalsense"])
+router = APIRouter(
+    prefix="/api",
+    tags=["vitalsense"],
+    dependencies=[Depends(require_auth)],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +266,12 @@ async def get_patient_status(
         family_notifications_sent=family_notifications_sent,
         doctor_notifications_sent=doctor_notifications_sent,
     )
+
+
+@router.delete("/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_patient(patient_id: str, repo: Repository = Depends(get_repo)):
+    if not repo.delete_patient(patient_id):
+        raise HTTPException(status_code=404, detail="patient not found")
 
 
 @router.put("/patients/{patient_id}/thresholds", response_model=Patient)

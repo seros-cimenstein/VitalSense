@@ -80,6 +80,9 @@ html, body {
   letter-spacing: 0.18em;
   color: var(--ink-mute);
 }
+.topbar-right {
+  display: flex; align-items: center; gap: 16px;
+}
 .topbar-status {
   display: flex; align-items: center; gap: 8px;
   font-size: 12px;

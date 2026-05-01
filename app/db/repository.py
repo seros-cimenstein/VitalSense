@@ -28,6 +28,7 @@ class Repository:
     def save_patient(self, patient: Patient) -> Patient: ...
     def get_patient(self, patient_id: str) -> Optional[Patient]: ...
     def list_patients(self) -> List[Patient]: ...
+    def delete_patient(self, patient_id: str) -> bool: ...
 
     # doctors
     def save_doctor(self, doctor: Doctor) -> Doctor: ...
@@ -74,6 +75,13 @@ class InMemoryRepository(Repository):
 
     def list_patients(self) -> List[Patient]:
         return list(self._patients.values())
+
+    def delete_patient(self, patient_id: str) -> bool:
+        with self._lock:
+            if patient_id not in self._patients:
+                return False
+            del self._patients[patient_id]
+            return True
 
     # doctors ---------------------------------------------------------------
     def save_doctor(self, doctor: Doctor) -> Doctor:
@@ -173,6 +181,13 @@ class FirestoreRepository(Repository):
 
     def list_patients(self) -> List[Patient]:
         return [Patient(**doc.to_dict()) for doc in self._db.collection("patients").stream()]
+
+    def delete_patient(self, patient_id: str) -> bool:
+        ref = self._db.collection("patients").document(patient_id)
+        if not ref.get().exists:
+            return False
+        ref.delete()
+        return True
 
     # doctors ---------------------------------------------------------------
     def save_doctor(self, doctor: Doctor) -> Doctor:

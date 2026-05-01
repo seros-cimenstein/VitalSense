@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import reset_graph
+from app.auth import create_access_token
 from app.db.repository import reset_repository
 from app.main import app
 
@@ -20,8 +21,14 @@ def _fresh_state():
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def auth_headers():
+    token = create_access_token("admin")
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def client(auth_headers):
+    return TestClient(app, headers=auth_headers)
 
 
 def test_health_endpoint(client):

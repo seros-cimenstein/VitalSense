@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.api import router as api_router
+from app.api import auth_router, router as api_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -18,6 +18,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.include_router(auth_router)
 app.include_router(api_router)
 
 # Static + templates for the dashboard
@@ -28,6 +29,11 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse(request, "dashboard.html")
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse(request, "login.html")
 
 
 @app.get("/health")
