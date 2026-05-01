@@ -38,7 +38,7 @@ def create_access_token(subject: str, expires_delta: Optional[timedelta] = None)
     return jwt.encode({"sub": subject, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def require_auth(token: str = Depends(oauth2_scheme)) -> str:
+async def require_auth(token: str = Depends(oauth2_scheme)) -> str:
     exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated",

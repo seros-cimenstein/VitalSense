@@ -29,15 +29,15 @@ def _build_graph() -> tuple[Repository, SOSService, AnomalyDetectionEngine]:
     return repo, sos, engine
 
 
-def get_repo() -> Repository:
+async def get_repo() -> Repository:
     return _build_graph()[0]
 
 
-def get_sos() -> SOSService:
+async def get_sos() -> SOSService:
     return _build_graph()[1]
 
 
-def get_engine() -> AnomalyDetectionEngine:
+async def get_engine() -> AnomalyDetectionEngine:
     return _build_graph()[2]
 
 

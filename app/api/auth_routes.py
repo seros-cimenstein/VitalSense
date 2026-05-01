@@ -1,8 +1,7 @@
 """Public auth endpoints — no Bearer token required."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.auth import (
@@ -21,11 +20,14 @@ class TokenResponse(BaseModel):
 
 
 @auth_router.post("/login", response_model=TokenResponse)
-async def login(form: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
-    if form.username != ADMIN_USERNAME or not verify_password(form.password, ADMIN_PASSWORD_HASH):
+async def login(request: Request) -> TokenResponse:
+    form = await request.form()
+    username = str(form.get("username", ""))
+    password = str(form.get("password", ""))
+    if username != ADMIN_USERNAME or not verify_password(password, ADMIN_PASSWORD_HASH):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return TokenResponse(access_token=create_access_token(form.username))
+    return TokenResponse(access_token=create_access_token(username))

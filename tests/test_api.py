@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import reset_graph
 from app.auth import create_access_token
@@ -26,25 +27,72 @@ def auth_headers():
     return {"Authorization": f"Bearer {token}"}
 
 
-@pytest.fixture
-def client(auth_headers):
-    return TestClient(app, headers=auth_headers)
+@pytest_asyncio.fixture
+async def client(auth_headers):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        headers=auth_headers,
+    ) as test_client:
+        yield test_client
 
 
-def test_health_endpoint(client):
-    r = client.get("/health")
+async def create_patient(client: AsyncClient, **overrides) -> str:
+    body = {
+        "name": "X",
+        "contact_number": "y",
+        "age": 30,
+        "height_cm": 170,
+        "weight_kg": 70,
+    }
+    body.update(overrides)
+    response = await client.post("/api/patients", json=body)
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint(client):
+    r = await client.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
 
 
-def test_dashboard_serves_html(client):
-    r = client.get("/")
+@pytest.mark.asyncio
+async def test_dashboard_serves_html(client):
+    r = await client.get("/")
     assert r.status_code == 200
     assert "VitalSense" in r.text
 
 
-def test_create_and_get_patient(client):
-    r = client.post("/api/patients", json={
+@pytest.mark.asyncio
+async def test_auth_login_flow():
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as public_client:
+        denied = await public_client.get("/api/patients")
+        assert denied.status_code == 401
+
+        login = await public_client.post(
+            "/api/auth/login",
+            data={"username": "admin", "password": "admin"},
+        )
+        assert login.status_code == 200
+        token = login.json()["access_token"]
+
+        allowed = await public_client.get(
+            "/api/patients",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert allowed.status_code == 200
+        assert allowed.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_and_get_patient(client):
+    r = await client.post("/api/patients", json={
         "name": "Selin Aydın",
         "contact_number": "+90-555-1000",
         "age": 28,
@@ -54,23 +102,22 @@ def test_create_and_get_patient(client):
     assert r.status_code == 201
     pid = r.json()["id"]
 
-    r = client.get(f"/api/patients/{pid}")
+    r = await client.get(f"/api/patients/{pid}")
     assert r.status_code == 200
     assert r.json()["name"] == "Selin Aydın"
 
 
-def test_get_unknown_patient_404(client):
-    r = client.get("/api/patients/does-not-exist")
+@pytest.mark.asyncio
+async def test_get_unknown_patient_404(client):
+    r = await client.get("/api/patients/does-not-exist")
     assert r.status_code == 404
 
 
-def test_update_thresholds(client):
-    pid = client.post("/api/patients", json={
-        "name": "X", "contact_number": "y", "age": 30,
-        "height_cm": 170, "weight_kg": 70,
-    }).json()["id"]
+@pytest.mark.asyncio
+async def test_update_thresholds(client):
+    pid = await create_patient(client)
 
-    r = client.put(f"/api/patients/{pid}/thresholds", json={
+    r = await client.put(f"/api/patients/{pid}/thresholds", json={
         "heart_rate_min": 60,
         "heart_rate_max": 110,
         "temperature_min": 36.0,
@@ -80,14 +127,14 @@ def test_update_thresholds(client):
     assert r.json()["thresholds"]["heart_rate_max"] == 110
 
 
-def test_telemetry_normal_path(client):
-    pid = client.post("/api/patients", json={
-        "name": "X", "contact_number": "y", "age": 30,
-        "height_cm": 170, "weight_kg": 70,
-    }).json()["id"]
+@pytest.mark.asyncio
+async def test_telemetry_normal_path(client):
+    pid = await create_patient(client)
 
-    r = client.post(f"/api/telemetry/{pid}", json={
-        "heart_rate": 80, "body_temperature": 36.7, "daily_steps": 100,
+    r = await client.post(f"/api/telemetry/{pid}", json={
+        "heart_rate": 80,
+        "body_temperature": 36.7,
+        "daily_steps": 100,
     })
     assert r.status_code == 200
     body = r.json()
@@ -95,35 +142,32 @@ def test_telemetry_normal_path(client):
     assert body["verification_pending"] is False
 
 
-def test_telemetry_breach_starts_verification(client):
-    pid = client.post("/api/patients", json={
-        "name": "X", "contact_number": "y", "age": 30,
-        "height_cm": 170, "weight_kg": 70,
-    }).json()["id"]
+@pytest.mark.asyncio
+async def test_telemetry_breach_starts_verification(client):
+    pid = await create_patient(client)
 
-    r = client.post(f"/api/telemetry/{pid}", json={
-        "heart_rate": 160, "body_temperature": 36.7,
+    r = await client.post(f"/api/telemetry/{pid}", json={
+        "heart_rate": 160,
+        "body_temperature": 36.7,
     })
     body = r.json()
     assert body["breach"] is True
     assert body["verification_pending"] is True
 
-    # /verify should cancel
-    r = client.post(f"/api/verify/{pid}")
+    r = await client.post(f"/api/verify/{pid}")
     assert r.json() == {"confirmed": True}
 
 
-def test_patient_status_reports_risk_and_countdown(client):
-    pid = client.post("/api/patients", json={
-        "name": "Risk", "contact_number": "y", "age": 30,
-        "height_cm": 170, "weight_kg": 70,
-    }).json()["id"]
+@pytest.mark.asyncio
+async def test_patient_status_reports_risk_and_countdown(client):
+    pid = await create_patient(client, name="Risk")
 
-    client.post(f"/api/telemetry/{pid}", json={
-        "heart_rate": 150, "body_temperature": 36.7,
+    await client.post(f"/api/telemetry/{pid}", json={
+        "heart_rate": 150,
+        "body_temperature": 36.7,
     })
 
-    r = client.get(f"/api/patients/{pid}/status")
+    r = await client.get(f"/api/patients/{pid}/status")
     assert r.status_code == 200
     body = r.json()
     assert body["risk_level"] in {"warning", "critical"}
@@ -132,62 +176,62 @@ def test_patient_status_reports_risk_and_countdown(client):
     assert body["latest_record"]["heart_rate"] == 150
 
 
-def test_telemetry_for_unknown_patient_404(client):
-    r = client.post("/api/telemetry/nope", json={
-        "heart_rate": 80, "body_temperature": 36.7,
+@pytest.mark.asyncio
+async def test_telemetry_for_unknown_patient_404(client):
+    r = await client.post("/api/telemetry/nope", json={
+        "heart_rate": 80,
+        "body_temperature": 36.7,
     })
     assert r.status_code == 404
 
 
-def test_invalid_telemetry_rejected(client):
-    pid = client.post("/api/patients", json={
-        "name": "X", "contact_number": "y", "age": 30,
-        "height_cm": 170, "weight_kg": 70,
-    }).json()["id"]
+@pytest.mark.asyncio
+async def test_invalid_telemetry_rejected(client):
+    pid = await create_patient(client)
 
-    # Heart rate way out of physical range — Pydantic validation rejects it
-    r = client.post(f"/api/telemetry/{pid}", json={
-        "heart_rate": 999, "body_temperature": 36.7,
+    r = await client.post(f"/api/telemetry/{pid}", json={
+        "heart_rate": 999,
+        "body_temperature": 36.7,
     })
     assert r.status_code == 422
 
 
-def test_snapshot_endpoint(client):
-    pid = client.post("/api/patients", json={
-        "name": "Snap", "contact_number": "y", "age": 40,
-        "height_cm": 170, "weight_kg": 70,
-    }).json()["id"]
+@pytest.mark.asyncio
+async def test_snapshot_endpoint(client):
+    pid = await create_patient(client, name="Snap", age=40)
 
-    client.post(f"/api/telemetry/{pid}", json={"heart_rate": 80, "body_temperature": 36.7})
-    r = client.get(f"/api/snapshot/{pid}")
+    await client.post(
+        f"/api/telemetry/{pid}",
+        json={"heart_rate": 80, "body_temperature": 36.7},
+    )
+    r = await client.get(f"/api/snapshot/{pid}")
     assert r.status_code == 200
     assert r.json()["patient"]["id"] == pid
     assert len(r.json()["recent_records"]) >= 1
 
 
-def test_force_sos_endpoint(client):
-    pid = client.post("/api/patients", json={
-        "name": "Escalate", "contact_number": "y", "age": 40,
-        "height_cm": 170, "weight_kg": 70,
-    }).json()["id"]
-    client.post(f"/api/telemetry/{pid}", json={"heart_rate": 145, "body_temperature": 36.7})
+@pytest.mark.asyncio
+async def test_force_sos_endpoint(client):
+    pid = await create_patient(client, name="Escalate", age=40)
+    await client.post(
+        f"/api/telemetry/{pid}",
+        json={"heart_rate": 145, "body_temperature": 36.7},
+    )
 
-    r = client.post(f"/api/sos/{pid}/force")
+    r = await client.post(f"/api/sos/{pid}/force")
     assert r.status_code == 200
     assert r.json()["patient"]["id"] == pid
 
-    status = client.get(f"/api/patients/{pid}/status").json()
+    status = (await client.get(f"/api/patients/{pid}/status")).json()
     assert status["sos_active"] is True
     assert status["call_attempted"] is True
 
 
-def test_register_family_member(client):
-    pid = client.post("/api/patients", json={
-        "name": "Fam", "contact_number": "y", "age": 50,
-        "height_cm": 170, "weight_kg": 70,
-    }).json()["id"]
+@pytest.mark.asyncio
+async def test_register_family_member(client):
+    pid = await create_patient(client, name="Fam", age=50)
 
-    r = client.post("/api/family", json={
+    r = await client.post("/api/family", json={
         "name": "Daughter",
         "contact_number": "+90-555-9999",
         "relationship": "daughter",
@@ -197,16 +241,17 @@ def test_register_family_member(client):
     assert r.json()["patient_id"] == pid
 
 
-def test_seed_demo_creates_complete_scenario(client):
-    r = client.post("/api/demo/seed")
+@pytest.mark.asyncio
+async def test_seed_demo_creates_complete_scenario(client):
+    r = await client.post("/api/demo/seed")
     assert r.status_code == 201
     patient = r.json()
     assert patient["name"] == "Ahmet Yilmaz"
     assert patient["doctor_id"] is not None
 
-    family = client.get(f"/api/family/{patient['id']}").json()
-    records = client.get(f"/api/records/{patient['id']}").json()
-    events = client.get(f"/api/events/{patient['id']}").json()
+    family = (await client.get(f"/api/family/{patient['id']}")).json()
+    records = (await client.get(f"/api/records/{patient['id']}")).json()
+    events = (await client.get(f"/api/events/{patient['id']}")).json()
     assert len(family) == 1
     assert len(records) >= 5
     assert any(e["type"] == "threshold_breach" for e in events)

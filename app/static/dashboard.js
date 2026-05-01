@@ -16,7 +16,8 @@ function handleUnauthorized() {
   window.location.replace("/login");
 }
 
-if (!getToken()) { window.location.replace("/login"); }
+const hasSession = Boolean(getToken());
+if (!hasSession) { window.location.replace("/login"); }
 
 // ----- api ------------------------------------------------------------------
 
@@ -761,7 +762,9 @@ function resizeChart() {
   canvas.height = 260;
 }
 
-new ResizeObserver(resizeChart).observe($("trend-chart").parentElement);
+if (hasSession) {
+  new ResizeObserver(resizeChart).observe($("trend-chart").parentElement);
+}
 
 // ----- utils ------------------------------------------------------------
 
@@ -778,5 +781,7 @@ function escapeHtml(str) {
 
 // ----- boot -------------------------------------------------------------
 
-refreshPatients();
-refreshDoctors();
+if (hasSession) {
+  refreshPatients();
+  refreshDoctors();
+}
