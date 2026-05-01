@@ -172,9 +172,17 @@ html, body {
 .threshold-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin: 12px 0;
+  gap: 12px;
+  margin: 4px 0 2px;
 }
+.threshold-grid input { width: 100%; }
+#threshold-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#threshold-card .section-title { margin-bottom: 0; }
+#threshold-card .hint { margin-top: -4px; }
 .threshold-grid label,
 .simulator-grid label,
 .modal-grid label {
@@ -186,6 +194,7 @@ html, body {
   letter-spacing: 0.12em;
   color: var(--ink-soft);
 }
+.threshold-grid label { gap: 6px; }
 input {
   font-family: "JetBrains Mono", monospace;
   font-size: 14px;
