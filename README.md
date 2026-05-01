@@ -118,3 +118,5 @@ pytest tests/test_anomaly_engine.py  # single file
 The suite covers: adapter conformance, threshold evaluation, verification timeout, SOS flow, and API routes.
 
 See `docs/DEMO_TOOLS.md` for the full demo/tooling guide.
+
+See `docs/AI_CHAT.md` for the proposed AI health chat integration plan.
