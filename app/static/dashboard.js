@@ -178,6 +178,7 @@ async function refreshTimeline() {
     `;
     list.appendChild(li);
   }
+  await refreshSnapshot();
 }
 
 function renderRiskStatus(status) {
@@ -191,6 +192,33 @@ function renderRiskStatus(status) {
   $("call-state").textContent = status.call_attempted ? "call: placed" : "call: waiting";
   $("family-state").textContent = `family: ${status.family_notifications_sent}`;
   $("doctor-state").textContent = `doctor: ${status.doctor_notifications_sent}`;
+}
+
+async function refreshSnapshot() {
+  if (!activePatient) return;
+  const snapshot = await api.get(`/snapshot/${activePatient.id}`);
+  $("snapshot-reason").textContent = snapshot.reason;
+  $("snapshot-record-count").textContent = snapshot.recent_records.length;
+  $("snapshot-time").textContent = new Date(snapshot.triggered_at).toLocaleTimeString();
+
+  const list = $("snapshot-records");
+  list.innerHTML = "";
+  const records = snapshot.recent_records.slice(0, 5);
+  if (!records.length) {
+    list.innerHTML = `<p class="hint">No telemetry records yet.</p>`;
+    return;
+  }
+  for (const record of records) {
+    const item = document.createElement("div");
+    item.className = "snapshot-record";
+    item.innerHTML = `
+      <span>${new Date(record.timestamp).toLocaleTimeString()}</span>
+      <strong>${record.heart_rate} bpm</strong>
+      <strong>${Number(record.body_temperature).toFixed(1)} °C</strong>
+      <span>${record.daily_steps} steps</span>
+    `;
+    list.appendChild(item);
+  }
 }
 
 function startCountdown(deadline) {

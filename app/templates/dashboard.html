@@ -152,6 +152,25 @@
           <button id="confirm-ok" class="btn-confirm">I'm OK</button>
         </div>
 
+        <!-- Doctor snapshot -->
+        <section class="card snapshot-card">
+          <header class="simulator-head">
+            <h2 class="section-title">Doctor snapshot</h2>
+            <span id="snapshot-time" class="hint">not generated</span>
+          </header>
+          <div class="snapshot-grid">
+            <div>
+              <span class="metric-label">Snapshot reason</span>
+              <p id="snapshot-reason" class="snapshot-reason">Select or stream telemetry to build a clinical snapshot.</p>
+            </div>
+            <div class="snapshot-stat">
+              <span class="metric-label">Records</span>
+              <span id="snapshot-record-count" class="metric-value-mono">0</span>
+            </div>
+          </div>
+          <div id="snapshot-records" class="snapshot-records"></div>
+        </section>
+
         <!-- Trends -->
         <section class="card">
           <header class="simulator-head">

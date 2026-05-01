@@ -474,6 +474,47 @@ input:focus { border-color: var(--accent); }
   height: 260px;
 }
 
+/* doctor snapshot */
+.snapshot-card {
+  border-color: rgba(15, 76, 79, 0.18);
+}
+.snapshot-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+.snapshot-reason {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.snapshot-stat {
+  text-align: right;
+}
+.snapshot-records {
+  display: grid;
+  gap: 8px;
+}
+.snapshot-record {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.snapshot-record strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
 /* simulator */
 .simulator-head {
   display: flex; justify-content: space-between; align-items: center;
@@ -766,6 +807,12 @@ select:focus { border-color: var(--accent); }
   .patient-header h1 { font-size: 26px; }
   .patient-bmi { text-align: left; }
   .risk-panel { grid-template-columns: 1fr; }
+  .snapshot-grid { grid-template-columns: 1fr; }
+  .snapshot-stat { text-align: left; }
+  .snapshot-record {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
 
   /* vitals */
   .vitals-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
