@@ -120,6 +120,24 @@ def create_doctor(body: CreateDoctorRequest, repo: Repository = Depends(get_repo
     return repo.save_doctor(doctor)
 
 
+@router.get("/doctors", response_model=List[Doctor])
+def list_doctors(repo: Repository = Depends(get_repo)) -> List[Doctor]:
+    return repo.list_doctors()
+
+
+@router.get("/doctors/{doctor_id}", response_model=Doctor)
+def get_doctor(doctor_id: str, repo: Repository = Depends(get_repo)) -> Doctor:
+    doctor = repo.get_doctor(doctor_id)
+    if doctor is None:
+        raise HTTPException(status_code=404, detail="doctor not found")
+    return doctor
+
+
+@router.get("/family/{patient_id}", response_model=List[FamilyMember])
+def list_family(patient_id: str, repo: Repository = Depends(get_repo)) -> List[FamilyMember]:
+    return repo.list_family_for_patient(patient_id)
+
+
 @router.post("/family", response_model=FamilyMember, status_code=status.HTTP_201_CREATED)
 def create_family_member(
     body: CreateFamilyRequest, repo: Repository = Depends(get_repo)

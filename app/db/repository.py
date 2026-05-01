@@ -32,6 +32,7 @@ class Repository:
     # doctors
     def save_doctor(self, doctor: Doctor) -> Doctor: ...
     def get_doctor(self, doctor_id: str) -> Optional[Doctor]: ...
+    def list_doctors(self) -> List[Doctor]: ...
 
     # family
     def save_family_member(self, member: FamilyMember) -> FamilyMember: ...
@@ -80,6 +81,9 @@ class InMemoryRepository(Repository):
 
     def get_doctor(self, doctor_id: str) -> Optional[Doctor]:
         return self._doctors.get(doctor_id)
+
+    def list_doctors(self) -> List[Doctor]:
+        return list(self._doctors.values())
 
     # family ----------------------------------------------------------------
     def save_family_member(self, member: FamilyMember) -> FamilyMember:
@@ -162,6 +166,9 @@ class FirestoreRepository(Repository):
     def get_doctor(self, doctor_id: str) -> Optional[Doctor]:
         snap = self._db.collection("doctors").document(doctor_id).get()
         return Doctor(**snap.to_dict()) if snap.exists else None
+
+    def list_doctors(self) -> List[Doctor]:
+        return [Doctor(**doc.to_dict()) for doc in self._db.collection("doctors").stream()]
 
     # family ----------------------------------------------------------------
     def save_family_member(self, member: FamilyMember) -> FamilyMember:

@@ -32,6 +32,7 @@ const api = {
 // state
 let activePatient = null;
 let pollHandle = null;
+let allDoctors = [];
 
 // element refs
 const $ = (id) => document.getElementById(id);
@@ -72,7 +73,7 @@ async function selectPatient(id) {
   thresholdCard.hidden = false;
   await refreshPatients();
   renderPatient();
-  await refreshTimeline();
+  await Promise.all([refreshTimeline(), refreshContacts()]);
   startPolling();
 }
 
@@ -172,6 +173,82 @@ function startPolling() {
   pollHandle = setInterval(refreshTimeline, 2000);
 }
 
+// ----- doctors ----------------------------------------------------------
+
+async function refreshDoctors() {
+  allDoctors = await api.get("/doctors");
+  const list = $("doctor-list");
+  list.innerHTML = "";
+  if (!allDoctors.length) {
+    list.innerHTML = `<li class="hint" style="padding:6px 0">no doctors registered</li>`;
+    return;
+  }
+  for (const d of allDoctors) {
+    const li = document.createElement("li");
+    li.className = "contact-item";
+    li.innerHTML = `
+      <div class="ci-main">
+        <span class="ci-name">${escapeHtml(d.name)}</span>
+        <span class="ci-badge ci-badge-doctor">doctor</span>
+      </div>
+      <div class="ci-meta">${escapeHtml(d.specialty)}${d.on_call_status ? ' · <span class="oncall-pill">on-call</span>' : ''}</div>
+      <div class="ci-phone">${escapeHtml(d.contact_number)}</div>
+    `;
+    list.appendChild(li);
+  }
+}
+
+function populateDoctorSelect() {
+  const sel = $("np-doctor");
+  sel.innerHTML = `<option value="">— none —</option>`;
+  for (const d of allDoctors) {
+    const opt = document.createElement("option");
+    opt.value = d.id;
+    opt.textContent = `${d.name} · ${d.specialty}`;
+    sel.appendChild(opt);
+  }
+}
+
+// ----- contacts (per patient) -------------------------------------------
+
+async function refreshContacts() {
+  if (!activePatient) return;
+  const family = await api.get(`/family/${activePatient.id}`);
+  const content = $("contacts-content");
+  content.innerHTML = "";
+
+  const doctor = allDoctors.find((d) => d.id === activePatient.doctor_id);
+
+  if (!doctor && !family.length) {
+    content.innerHTML = `<p class="hint">No contacts linked. Register a doctor first, then assign when creating a patient. Add family members with the button above.</p>`;
+    return;
+  }
+
+  if (doctor) {
+    content.appendChild(contactCard(
+      doctor.name, `${doctor.specialty}${doctor.on_call_status ? ' · <span class="oncall-pill">on-call</span>' : ''}`,
+      doctor.contact_number, "doctor", "ci-badge-doctor"
+    ));
+  }
+  for (const m of family) {
+    content.appendChild(contactCard(m.name, m.relationship, m.contact_number, "family", "ci-badge-family"));
+  }
+}
+
+function contactCard(name, meta, phone, label, badgeClass) {
+  const div = document.createElement("div");
+  div.className = "contact-item";
+  div.innerHTML = `
+    <div class="ci-main">
+      <span class="ci-name">${escapeHtml(name)}</span>
+      <span class="ci-badge ${badgeClass}">${label}</span>
+    </div>
+    <div class="ci-meta">${meta}</div>
+    <div class="ci-phone">${escapeHtml(phone)}</div>
+  `;
+  return div;
+}
+
 // ----- actions ----------------------------------------------------------
 
 $("save-thresholds").addEventListener("click", async () => {
@@ -213,6 +290,7 @@ $("confirm-ok").addEventListener("click", async () => {
 // ----- new patient modal ------------------------------------------------
 
 $("new-patient-btn").addEventListener("click", () => {
+  populateDoctorSelect();
   $("modal-overlay").hidden = false;
 });
 $("modal-close").addEventListener("click", () => {
@@ -226,6 +304,7 @@ $("np-save").addEventListener("click", async () => {
     age: parseInt($("np-age").value, 10),
     height_cm: parseFloat($("np-height").value),
     weight_kg: parseFloat($("np-weight").value),
+    doctor_id: $("np-doctor").value || null,
   };
   if (!body.name.trim() || !body.contact_number.trim()) {
     alert("Name and phone are required.");
@@ -252,6 +331,57 @@ $("np-save").addEventListener("click", async () => {
   await selectPatient(created.id);
 });
 
+// ----- doctor modal -----------------------------------------------------
+
+$("new-doctor-btn").addEventListener("click", () => { $("modal-doctor").hidden = false; });
+$("modal-doctor-close").addEventListener("click", () => { $("modal-doctor").hidden = true; });
+$("nd-save").addEventListener("click", async () => {
+  const name = $("nd-name").value.trim();
+  const phone = $("nd-phone").value.trim();
+  const specialty = $("nd-specialty").value.trim();
+  if (!name || !phone || !specialty) {
+    alert("Name, phone, and specialty are required.");
+    return;
+  }
+  await api.post("/doctors", {
+    name,
+    contact_number: phone,
+    specialty,
+    on_call_status: $("nd-oncall").checked,
+  });
+  $("modal-doctor").hidden = true;
+  ["nd-name", "nd-phone", "nd-specialty"].forEach((id) => ($(id).value = ""));
+  $("nd-oncall").checked = true;
+  await refreshDoctors();
+});
+
+// ----- family modal -----------------------------------------------------
+
+$("add-family-btn").addEventListener("click", () => {
+  if (!activePatient) { alert("Select a patient first."); return; }
+  $("modal-family").hidden = false;
+});
+$("modal-family-close").addEventListener("click", () => { $("modal-family").hidden = true; });
+$("nf-save").addEventListener("click", async () => {
+  if (!activePatient) return;
+  const name = $("nf-name").value.trim();
+  const phone = $("nf-phone").value.trim();
+  const relationship = $("nf-relationship").value.trim();
+  if (!name || !phone || !relationship) {
+    alert("All fields are required.");
+    return;
+  }
+  await api.post("/family", {
+    name,
+    contact_number: phone,
+    relationship,
+    patient_id: activePatient.id,
+  });
+  $("modal-family").hidden = true;
+  ["nf-name", "nf-phone", "nf-relationship"].forEach((id) => ($(id).value = ""));
+  await refreshContacts();
+});
+
 // ----- utils ------------------------------------------------------------
 
 function escapeHtml(str) {
@@ -268,3 +398,4 @@ function escapeHtml(str) {
 // ----- boot -------------------------------------------------------------
 
 refreshPatients();
+refreshDoctors();
