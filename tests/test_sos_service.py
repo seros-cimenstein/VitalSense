@@ -17,8 +17,15 @@ def test_sos_protocol_notifies_family_and_doctor(sos, repo, patient, notifier):
 
     types = [e.type for e in repo.recent_events(patient.id)]
     assert EventType.SOS_TRIGGERED in types
+    assert EventType.CALL_ATTEMPTED in types
     assert EventType.FAMILY_NOTIFIED in types
     assert EventType.DOCTOR_NOTIFIED in types
+
+    delivery_events = [
+        e for e in repo.recent_events(patient.id)
+        if e.type in {EventType.CALL_ATTEMPTED, EventType.FAMILY_NOTIFIED, EventType.DOCTOR_NOTIFIED}
+    ]
+    assert all(e.metadata["delivered"] is True for e in delivery_events)
 
     # Family + doctor SMS contents
     family_msg = next(m for c, m in notifier.sent if c == "+90-555-0300")

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_engine, get_repo, get_sos
-from app.core import AnomalyDetectionEngine
+from app.core import AnomalyDetectionEngine, BreachReason
 from app.db import Repository
 from app.models import (
     Doctor,
@@ -72,6 +72,10 @@ class PatientStatus(BaseModel):
     verification_deadline: Optional[datetime] = None
     seconds_remaining: Optional[int] = None
     recent_breach_count: int
+    sos_active: bool
+    call_attempted: bool
+    family_notifications_sent: int
+    doctor_notifications_sent: int
 
 
 # ---------------------------------------------------------------------------
@@ -223,9 +227,16 @@ async def get_patient_status(
 
     last_sos = next((e for e in events if e.type == EventType.SOS_TRIGGERED), None)
     last_confirm = next((e for e in events if e.type == EventType.VERIFICATION_CONFIRMED), None)
-    if last_sos and (last_confirm is None or last_sos.timestamp > last_confirm.timestamp):
+    sos_active = bool(
+        last_sos and (last_confirm is None or last_sos.timestamp > last_confirm.timestamp)
+    )
+    if sos_active:
         risk_score = max(risk_score, 90)
         summary = "SOS escalation is active"
+
+    call_attempted = any(e.type == EventType.CALL_ATTEMPTED for e in events)
+    family_notifications_sent = sum(1 for e in events if e.type == EventType.FAMILY_NOTIFIED)
+    doctor_notifications_sent = sum(1 for e in events if e.type == EventType.DOCTOR_NOTIFIED)
 
     risk_score = min(100, risk_score)
     if risk_score >= 75:
@@ -245,6 +256,10 @@ async def get_patient_status(
         verification_deadline=deadline,
         seconds_remaining=seconds_remaining,
         recent_breach_count=recent_breach_count,
+        sos_active=sos_active,
+        call_attempted=call_attempted,
+        family_notifications_sent=family_notifications_sent,
+        doctor_notifications_sent=doctor_notifications_sent,
     )
 
 
@@ -373,6 +388,36 @@ async def push_telemetry(
 async def verify(patient_id: str, engine: AnomalyDetectionEngine = Depends(get_engine)):
     confirmed = engine.confirm_verification(patient_id)
     return {"confirmed": confirmed}
+
+
+@router.post("/sos/{patient_id}/force", response_model=HealthSnapshot)
+async def force_sos(
+    patient_id: str,
+    repo: Repository = Depends(get_repo),
+    sos: SOSService = Depends(get_sos),
+) -> HealthSnapshot:
+    patient = repo.get_patient(patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="patient not found")
+
+    latest = repo.recent_records(patient_id, limit=1)
+    if latest:
+        record = latest[0]
+        reason = BreachReason(
+            heart_rate_breach=True,
+            temperature_breach=False,
+            detail=(
+                "Manual demo escalation from dashboard; "
+                f"latest HR={record.heart_rate}, Temp={record.body_temperature}"
+            ),
+        )
+    else:
+        reason = BreachReason(
+            heart_rate_breach=True,
+            temperature_breach=False,
+            detail="Manual demo escalation from dashboard; no recent telemetry",
+        )
+    return sos.initiate_emergency_protocol(patient, reason)
 
 
 @router.get("/snapshot/{patient_id}", response_model=HealthSnapshot)

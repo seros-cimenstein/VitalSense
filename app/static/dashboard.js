@@ -188,6 +188,9 @@ function renderRiskStatus(status) {
   $("risk-score").textContent = `${status.risk_score}/100`;
   $("risk-summary").textContent = status.summary;
   $("risk-meter-fill").style.width = `${status.risk_score}%`;
+  $("call-state").textContent = status.call_attempted ? "call: placed" : "call: waiting";
+  $("family-state").textContent = `family: ${status.family_notifications_sent}`;
+  $("doctor-state").textContent = `doctor: ${status.doctor_notifications_sent}`;
 }
 
 function startCountdown(deadline) {
@@ -524,6 +527,13 @@ function clamp(value, min, max) {
 $("confirm-ok").addEventListener("click", async () => {
   if (!activePatient) return;
   await api.post(`/verify/${activePatient.id}`);
+  await refreshTimeline();
+});
+
+$("force-sos").addEventListener("click", async () => {
+  if (!activePatient) return;
+  if (!confirm(`Force SOS escalation for ${activePatient.name}?`)) return;
+  await api.post(`/sos/${activePatient.id}/force`);
   await refreshTimeline();
 });
 

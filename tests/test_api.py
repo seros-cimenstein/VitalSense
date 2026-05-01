@@ -158,6 +158,22 @@ def test_snapshot_endpoint(client):
     assert len(r.json()["recent_records"]) >= 1
 
 
+def test_force_sos_endpoint(client):
+    pid = client.post("/api/patients", json={
+        "name": "Escalate", "contact_number": "y", "age": 40,
+        "height_cm": 170, "weight_kg": 70,
+    }).json()["id"]
+    client.post(f"/api/telemetry/{pid}", json={"heart_rate": 145, "body_temperature": 36.7})
+
+    r = client.post(f"/api/sos/{pid}/force")
+    assert r.status_code == 200
+    assert r.json()["patient"]["id"] == pid
+
+    status = client.get(f"/api/patients/{pid}/status").json()
+    assert status["sos_active"] is True
+    assert status["call_attempted"] is True
+
+
 def test_register_family_member(client):
     pid = client.post("/api/patients", json={
         "name": "Fam", "contact_number": "y", "age": 50,

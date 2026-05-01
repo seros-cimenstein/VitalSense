@@ -96,6 +96,11 @@
           <div class="risk-meter" aria-hidden="true">
             <span id="risk-meter-fill"></span>
           </div>
+          <div class="escalation-strip">
+            <span id="call-state">call: waiting</span>
+            <span id="family-state">family: 0</span>
+            <span id="doctor-state">doctor: 0</span>
+          </div>
         </section>
 
         <div class="vitals-grid">
@@ -171,6 +176,7 @@
             <div class="simulator-actions">
               <button id="push-telemetry" class="btn-ghost">push once</button>
               <button id="stream-telemetry" class="btn-primary">start stream</button>
+              <button id="force-sos" class="btn-danger">force SOS</button>
             </div>
           </div>
           <div class="quick-presets">
