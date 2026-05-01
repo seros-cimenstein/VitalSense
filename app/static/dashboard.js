@@ -90,6 +90,7 @@ const verBanner = $("verification-banner");
 
 async function refreshPatients() {
   const patients = await api.get("/patients");
+  if (!patients) return;
   patientList.innerHTML = "";
   if (!patients.length) {
     patientList.innerHTML = `<li class="hint">no patients yet</li>`;
@@ -113,7 +114,9 @@ async function refreshPatients() {
 async function selectPatient(id) {
   stopTelemetryStream();
   stopCountdown();
-  activePatient = await api.get(`/patients/${id}`);
+  const p = await api.get(`/patients/${id}`);
+  if (!p) return;
+  activePatient = p;
   emptyState.hidden = true;
   patientView.hidden = false;
   thresholdCard.hidden = false;
@@ -154,6 +157,7 @@ async function refreshTimeline() {
     api.get(`/records/${activePatient.id}?limit=30`),
     api.get(`/patients/${activePatient.id}/status`),
   ]);
+  if (!events || !records || !status) return;
   renderRiskStatus(status);
   renderTrendChart(records.slice().reverse());
 
@@ -368,7 +372,9 @@ function startPolling() {
 // ----- doctors ----------------------------------------------------------
 
 async function refreshDoctors() {
-  allDoctors = await api.get("/doctors");
+  const doctors = await api.get("/doctors");
+  if (!doctors) return;
+  allDoctors = doctors;
   const list = $("doctor-list");
   list.innerHTML = "";
   if (!allDoctors.length) {
@@ -595,6 +601,7 @@ $("force-sos").addEventListener("click", async () => {
 
 $("seed-demo-btn").addEventListener("click", async () => {
   const created = await api.post("/demo/seed");
+  if (!created) return;
   await refreshDoctors();
   await refreshPatients();
   await selectPatient(created.id);
@@ -636,6 +643,7 @@ $("np-save").addEventListener("click", async () => {
     return;
   }
   const created = await api.post("/patients", body);
+  if (!created) return;
   $("modal-overlay").hidden = true;
   ["np-name", "np-phone", "np-location", "np-age", "np-height", "np-weight"].forEach(
     (id) => ($(id).value = "")
