@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, Optional
 
 from app.db import Repository
@@ -92,6 +93,7 @@ class AnomalyDetectionEngine:
         )
         self._pending: Dict[str, "threading.Timer"] = {}
         self._pending_reasons: Dict[str, BreachReason] = {}
+        self._pending_deadlines: Dict[str, datetime] = {}
         self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
@@ -116,6 +118,7 @@ class AnomalyDetectionEngine:
         with self._lock:
             timer = self._pending.pop(patient_id, None)
             self._pending_reasons.pop(patient_id, None)
+            self._pending_deadlines.pop(patient_id, None)
 
         if timer is None:
             return False  # nothing pending
@@ -173,6 +176,9 @@ class AnomalyDetectionEngine:
             )
             self._pending[patient.id] = timer
             self._pending_reasons[patient.id] = reason
+            self._pending_deadlines[patient.id] = (
+                datetime.now(timezone.utc) + timedelta(seconds=self._timeout)
+            )
             timer.daemon = True  # don't block process exit
             timer.start()
 
@@ -182,6 +188,7 @@ class AnomalyDetectionEngine:
             # Drop tracking before delegating
             self._pending.pop(patient_id, None)
             self._pending_reasons.pop(patient_id, None)
+            self._pending_deadlines.pop(patient_id, None)
 
         # Re-fetch patient (state may have changed)
         patient = self._repo.get_patient(patient_id)
@@ -196,6 +203,9 @@ class AnomalyDetectionEngine:
 
     def has_pending_verification(self, patient_id: str) -> bool:
         return patient_id in self._pending
+
+    def pending_verification_deadline(self, patient_id: str) -> Optional[datetime]:
+        return self._pending_deadlines.get(patient_id)
 
     def force_timeout(self, patient_id: str) -> None:
         """Test helper — fire the timeout immediately, bypassing the timer."""

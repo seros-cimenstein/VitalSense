@@ -26,10 +26,10 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
+async def dashboard(request: Request):
     return templates.TemplateResponse(request, "dashboard.html")
 
 
 @app.get("/health")
-def health_check():
+async def health_check():
     return {"status": "ok"}

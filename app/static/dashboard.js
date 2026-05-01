@@ -46,6 +46,7 @@ const api = {
 let activePatient = null;
 let pollHandle = null;
 let streamHandle = null;
+let countdownHandle = null;
 let allDoctors = [];
 const STREAM_INTERVAL_MS = 2500;
 
@@ -83,6 +84,7 @@ async function refreshPatients() {
 
 async function selectPatient(id) {
   stopTelemetryStream();
+  stopCountdown();
   activePatient = await api.get(`/patients/${id}`);
   emptyState.hidden = true;
   patientView.hidden = false;
@@ -119,10 +121,13 @@ function renderPatient() {
 async function refreshTimeline() {
   if (!activePatient) return;
 
-  const [events, records] = await Promise.all([
+  const [events, records, status] = await Promise.all([
     api.get(`/events/${activePatient.id}?limit=30`),
-    api.get(`/records/${activePatient.id}?limit=1`),
+    api.get(`/records/${activePatient.id}?limit=30`),
+    api.get(`/patients/${activePatient.id}/status`),
   ]);
+  renderRiskStatus(status);
+  renderTrendChart(records.slice().reverse());
 
   // latest record drives vital cards
   if (records.length) {
@@ -139,21 +144,19 @@ async function refreshTimeline() {
     if (tempBreach) document.querySelectorAll(".vital-card")[1].classList.add("breach");
   }
 
-  // verification pending?
-  const pending = events.find((e) => e.type === "verification_sent");
-  const confirmed = events.find((e) => e.type === "verification_confirmed");
-  const sosFired = events.find((e) => e.type === "sos_triggered");
-  // banner shows if the most recent verification_sent is newer than any confirm/sos
-  const showBanner =
-    pending &&
-    (!confirmed || new Date(confirmed.timestamp) < new Date(pending.timestamp)) &&
-    (!sosFired || new Date(sosFired.timestamp) < new Date(pending.timestamp));
-  verBanner.hidden = !showBanner;
+  verBanner.hidden = !status.verification_pending;
+  if (status.verification_pending) {
+    startCountdown(status.verification_deadline);
+  } else {
+    stopCountdown();
+  }
 
   // status text
-  if (sosFired && (!confirmed || new Date(sosFired.timestamp) > new Date(confirmed.timestamp))) {
+  if (status.summary === "SOS escalation is active") {
     $("status-text").textContent = "SOS active";
-  } else if (showBanner) {
+  } else if (status.risk_level === "critical") {
+    $("status-text").textContent = "critical vitals";
+  } else if (status.verification_pending) {
     $("status-text").textContent = "awaiting verification";
   } else {
     $("status-text").textContent = "monitoring";
@@ -175,6 +178,119 @@ async function refreshTimeline() {
     `;
     list.appendChild(li);
   }
+}
+
+function renderRiskStatus(status) {
+  const panel = $("risk-panel");
+  panel.classList.remove("risk-normal", "risk-warning", "risk-critical");
+  panel.classList.add(`risk-${status.risk_level}`);
+  $("risk-level").textContent = status.risk_level;
+  $("risk-score").textContent = `${status.risk_score}/100`;
+  $("risk-summary").textContent = status.summary;
+  $("risk-meter-fill").style.width = `${status.risk_score}%`;
+}
+
+function startCountdown(deadline) {
+  if (countdownHandle) clearInterval(countdownHandle);
+  updateCountdown(deadline);
+  countdownHandle = setInterval(() => updateCountdown(deadline), 500);
+}
+
+function stopCountdown() {
+  if (countdownHandle) clearInterval(countdownHandle);
+  countdownHandle = null;
+  $("verification-countdown").textContent = "—";
+}
+
+function updateCountdown(deadline) {
+  if (!deadline) {
+    $("verification-countdown").textContent = "verification pending";
+    return;
+  }
+  const remaining = Math.max(0, Math.ceil((new Date(deadline) - new Date()) / 1000));
+  $("verification-countdown").textContent = `${remaining}s left before SOS escalation`;
+}
+
+function renderTrendChart(records) {
+  const canvas = $("trend-chart");
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  $("trend-count").textContent = `${records.length} readings`;
+
+  ctx.fillStyle = "#fffaf2";
+  ctx.fillRect(0, 0, width, height);
+  ctx.strokeStyle = "rgba(26, 42, 46, 0.08)";
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i += 1) {
+    const y = (height / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(36, y);
+    ctx.lineTo(width - 16, y);
+    ctx.stroke();
+  }
+
+  if (records.length < 2) {
+    ctx.fillStyle = "#8a9396";
+    ctx.font = "14px Manrope, sans-serif";
+    ctx.fillText("Push or stream telemetry to build a trend.", 36, height / 2);
+    return;
+  }
+
+  drawSeries(ctx, records, {
+    key: "heart_rate",
+    color: "#0f4c4f",
+    min: 40,
+    max: 160,
+    top: 22,
+    bottom: height - 34,
+    left: 36,
+    right: width - 18,
+  });
+  drawSeries(ctx, records, {
+    key: "body_temperature",
+    color: "#c84a3b",
+    min: 35,
+    max: 41,
+    top: 22,
+    bottom: height - 34,
+    left: 36,
+    right: width - 18,
+  });
+
+  ctx.font = "12px Manrope, sans-serif";
+  ctx.fillStyle = "#0f4c4f";
+  ctx.fillText("Heart rate", 36, 18);
+  ctx.fillStyle = "#c84a3b";
+  ctx.fillText("Temperature", 120, 18);
+}
+
+function drawSeries(ctx, records, opts) {
+  const span = Math.max(1, records.length - 1);
+  const yFor = (value) => {
+    const pct = (clamp(value, opts.min, opts.max) - opts.min) / (opts.max - opts.min);
+    return opts.bottom - pct * (opts.bottom - opts.top);
+  };
+  ctx.strokeStyle = opts.color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  records.forEach((record, index) => {
+    const x = opts.left + (index / span) * (opts.right - opts.left);
+    const y = yFor(record[opts.key]);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = opts.color;
+  records.forEach((record, index) => {
+    const x = opts.left + (index / span) * (opts.right - opts.left);
+    const y = yFor(record[opts.key]);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function eventClass(type) {
@@ -409,6 +525,13 @@ $("confirm-ok").addEventListener("click", async () => {
   if (!activePatient) return;
   await api.post(`/verify/${activePatient.id}`);
   await refreshTimeline();
+});
+
+$("seed-demo-btn").addEventListener("click", async () => {
+  const created = await api.post("/demo/seed");
+  await refreshDoctors();
+  await refreshPatients();
+  await selectPatient(created.id);
 });
 
 // ----- new patient modal ------------------------------------------------

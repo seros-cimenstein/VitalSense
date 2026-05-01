@@ -152,6 +152,11 @@ html, body {
   flex-direction: column;
   gap: 6px;
 }
+.sidebar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .patient-item {
   padding: 10px 12px;
   border-radius: var(--radius-sm);
@@ -293,6 +298,63 @@ input:focus { border-color: var(--accent); }
   font-size: 22px;
 }
 
+/* risk state */
+.risk-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 18px;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+.risk-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+#risk-level {
+  font-family: "Fraunces", serif;
+  font-size: 28px;
+  text-transform: capitalize;
+}
+#risk-score {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+#risk-summary {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.risk-meter {
+  height: 10px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.risk-meter span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: var(--ok);
+  border-radius: inherit;
+  transition: width 0.2s ease, background 0.2s ease;
+}
+.risk-warning {
+  border-color: rgba(200, 74, 59, 0.45);
+  background: #fff7ee;
+}
+.risk-warning .risk-meter span { background: #d68a29; }
+.risk-critical {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+.risk-critical .risk-meter span { background: var(--warn); }
+
 /* vitals grid */
 .vitals-grid {
   display: grid;
@@ -363,6 +425,27 @@ input:focus { border-color: var(--accent); }
   margin: 4px 0 0;
   font-size: 13px;
   color: var(--ink-soft);
+}
+.countdown {
+  display: inline-block;
+  margin-top: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--warn);
+}
+
+/* chart */
+.chart-wrap {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+.chart-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 260px;
 }
 
 /* simulator */
@@ -654,6 +737,7 @@ select:focus { border-color: var(--accent); }
   }
   .patient-header h1 { font-size: 26px; }
   .patient-bmi { text-align: left; }
+  .risk-panel { grid-template-columns: 1fr; }
 
   /* vitals */
   .vitals-grid { grid-template-columns: 1fr 1fr; gap: 10px; }

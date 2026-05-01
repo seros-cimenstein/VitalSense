@@ -37,7 +37,10 @@
     <aside class="sidebar">
       <section class="card">
         <h2 class="section-title">Patients</h2>
-        <button id="new-patient-btn" class="btn-ghost">+ register</button>
+        <div class="sidebar-actions">
+          <button id="new-patient-btn" class="btn-ghost">+ register</button>
+          <button id="seed-demo-btn" class="btn-ghost">load demo</button>
+        </div>
         <ul id="patient-list" class="patient-list"></ul>
       </section>
 
@@ -80,6 +83,20 @@
             <span id="patient-bmi" class="metric-value-mono">—</span>
           </div>
         </header>
+
+        <section id="risk-panel" class="risk-panel risk-normal">
+          <div>
+            <span class="metric-label">Risk state</span>
+            <div class="risk-line">
+              <span id="risk-level">normal</span>
+              <span id="risk-score">0</span>
+            </div>
+            <p id="risk-summary">Latest vitals are within personalized limits</p>
+          </div>
+          <div class="risk-meter" aria-hidden="true">
+            <span id="risk-meter-fill"></span>
+          </div>
+        </section>
 
         <div class="vitals-grid">
           <article class="vital-card">
@@ -125,9 +142,21 @@
           <div>
             <strong>Are you OK?</strong>
             <p>VitalSense detected a threshold breach. Confirm to cancel SOS.</p>
+            <span id="verification-countdown" class="countdown">—</span>
           </div>
           <button id="confirm-ok" class="btn-confirm">I'm OK</button>
         </div>
+
+        <!-- Trends -->
+        <section class="card">
+          <header class="simulator-head">
+            <h2 class="section-title">Vital trends</h2>
+            <span id="trend-count" class="hint">0 readings</span>
+          </header>
+          <div class="chart-wrap">
+            <canvas id="trend-chart" width="860" height="260"></canvas>
+          </div>
+        </section>
 
         <!-- Telemetry simulator -->
         <section class="card simulator">
