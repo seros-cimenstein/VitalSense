@@ -41,6 +41,16 @@ class SOSService:
             )
         )
 
+        # Call the patient first
+        self._repo.append_event(
+            Event(
+                patient_id=patient.id,
+                type=EventType.CALL_ATTEMPTED,
+                message=f"Automated call placed to {patient.name} ({patient.contact_number}).",
+            )
+        )
+        self._notify.send_call_to_patient(patient.contact_number, patient.name)
+
         snapshot = self._build_snapshot(patient, reason)
         self._notify_family(patient, reason)
         self._notify_doctor(patient, snapshot)

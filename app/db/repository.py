@@ -33,6 +33,8 @@ class Repository:
     def save_doctor(self, doctor: Doctor) -> Doctor: ...
     def get_doctor(self, doctor_id: str) -> Optional[Doctor]: ...
     def list_doctors(self) -> List[Doctor]: ...
+    def delete_doctor(self, doctor_id: str) -> bool: ...
+    def delete_family_member(self, member_id: str) -> bool: ...
 
     # family
     def save_family_member(self, member: FamilyMember) -> FamilyMember: ...
@@ -85,6 +87,13 @@ class InMemoryRepository(Repository):
     def list_doctors(self) -> List[Doctor]:
         return list(self._doctors.values())
 
+    def delete_doctor(self, doctor_id: str) -> bool:
+        with self._lock:
+            if doctor_id not in self._doctors:
+                return False
+            del self._doctors[doctor_id]
+            return True
+
     # family ----------------------------------------------------------------
     def save_family_member(self, member: FamilyMember) -> FamilyMember:
         with self._lock:
@@ -93,6 +102,13 @@ class InMemoryRepository(Repository):
 
     def get_family_member(self, member_id: str) -> Optional[FamilyMember]:
         return self._family.get(member_id)
+
+    def delete_family_member(self, member_id: str) -> bool:
+        with self._lock:
+            if member_id not in self._family:
+                return False
+            del self._family[member_id]
+            return True
 
     def list_family_for_patient(self, patient_id: str) -> List[FamilyMember]:
         return [m for m in self._family.values() if m.patient_id == patient_id]
@@ -167,6 +183,13 @@ class FirestoreRepository(Repository):
         snap = self._db.collection("doctors").document(doctor_id).get()
         return Doctor(**snap.to_dict()) if snap.exists else None
 
+    def delete_doctor(self, doctor_id: str) -> bool:
+        ref = self._db.collection("doctors").document(doctor_id)
+        if not ref.get().exists:
+            return False
+        ref.delete()
+        return True
+
     def list_doctors(self) -> List[Doctor]:
         return [Doctor(**doc.to_dict()) for doc in self._db.collection("doctors").stream()]
 
@@ -180,6 +203,13 @@ class FirestoreRepository(Repository):
     def get_family_member(self, member_id: str) -> Optional[FamilyMember]:
         snap = self._db.collection("family_members").document(member_id).get()
         return FamilyMember(**snap.to_dict()) if snap.exists else None
+
+    def delete_family_member(self, member_id: str) -> bool:
+        ref = self._db.collection("family_members").document(member_id)
+        if not ref.get().exists:
+            return False
+        ref.delete()
+        return True
 
     def list_family_for_patient(self, patient_id: str) -> List[FamilyMember]:
         docs = (

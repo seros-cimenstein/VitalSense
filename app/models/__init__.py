@@ -129,6 +129,7 @@ class EventType(str, Enum):
     SOS_TRIGGERED = "sos_triggered"
     FAMILY_NOTIFIED = "family_notified"
     DOCTOR_NOTIFIED = "doctor_notified"
+    CALL_ATTEMPTED = "call_attempted"
 
 
 class Event(BaseModel):

@@ -27,6 +27,19 @@ const api = {
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return r.json();
   },
+  async patch(path, body) {
+    const r = await fetch(`/api${path}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`${r.status} ${path}`);
+    return r.json();
+  },
+  async delete(path) {
+    const r = await fetch(`/api${path}`, { method: "DELETE" });
+    if (!r.ok) throw new Error(`${r.status} ${path}`);
+  },
 };
 
 // state
@@ -165,6 +178,7 @@ function eventClass(type) {
   if (["sos_triggered", "threshold_breach", "family_notified", "doctor_notified"].includes(type))
     return "ev-warn";
   if (type === "verification_confirmed") return "ev-ok";
+  if (type === "call_attempted") return "ev-call";
   return "";
 }
 
@@ -190,10 +204,17 @@ async function refreshDoctors() {
       <div class="ci-main">
         <span class="ci-name">${escapeHtml(d.name)}</span>
         <span class="ci-badge ci-badge-doctor">doctor</span>
+        <button class="ci-remove" title="Delete doctor">×</button>
       </div>
       <div class="ci-meta">${escapeHtml(d.specialty)}${d.on_call_status ? ' · <span class="oncall-pill">on-call</span>' : ''}</div>
       <div class="ci-phone">${escapeHtml(d.contact_number)}</div>
     `;
+    li.querySelector(".ci-remove").addEventListener("click", async () => {
+      if (!confirm(`Delete Dr. ${d.name}? This cannot be undone.`)) return;
+      await api.delete(`/doctors/${d.id}`);
+      await refreshDoctors();
+      if (activePatient) await refreshContacts();
+    });
     list.appendChild(li);
   }
 }
@@ -219,33 +240,65 @@ async function refreshContacts() {
 
   const doctor = allDoctors.find((d) => d.id === activePatient.doctor_id);
 
-  if (!doctor && !family.length) {
-    content.innerHTML = `<p class="hint">No contacts linked. Register a doctor first, then assign when creating a patient. Add family members with the button above.</p>`;
-    return;
+  if (doctor) {
+    content.appendChild(doctorContactCard(doctor));
+  } else {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = "No doctor assigned.";
+    content.appendChild(p);
   }
 
-  if (doctor) {
-    content.appendChild(contactCard(
-      doctor.name, `${doctor.specialty}${doctor.on_call_status ? ' · <span class="oncall-pill">on-call</span>' : ''}`,
-      doctor.contact_number, "doctor", "ci-badge-doctor"
-    ));
-  }
   for (const m of family) {
-    content.appendChild(contactCard(m.name, m.relationship, m.contact_number, "family", "ci-badge-family"));
+    content.appendChild(familyContactCard(m));
+  }
+
+  if (!doctor && !family.length) {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.style.marginTop = "4px";
+    p.textContent = "No contacts linked yet. Use the buttons above to add.";
+    content.appendChild(p);
   }
 }
 
-function contactCard(name, meta, phone, label, badgeClass) {
+function doctorContactCard(doctor) {
   const div = document.createElement("div");
   div.className = "contact-item";
   div.innerHTML = `
     <div class="ci-main">
-      <span class="ci-name">${escapeHtml(name)}</span>
-      <span class="ci-badge ${badgeClass}">${label}</span>
+      <span class="ci-name">${escapeHtml(doctor.name)}</span>
+      <span class="ci-badge ci-badge-doctor">doctor</span>
+      <button class="ci-remove" title="Unassign doctor">×</button>
     </div>
-    <div class="ci-meta">${meta}</div>
-    <div class="ci-phone">${escapeHtml(phone)}</div>
+    <div class="ci-meta">${escapeHtml(doctor.specialty)}${doctor.on_call_status ? ' · <span class="oncall-pill">on-call</span>' : ''}</div>
+    <div class="ci-phone">${escapeHtml(doctor.contact_number)}</div>
   `;
+  div.querySelector(".ci-remove").addEventListener("click", async () => {
+    if (!confirm(`Unassign Dr. ${doctor.name} from this patient?`)) return;
+    activePatient = await api.patch(`/patients/${activePatient.id}/doctor`, { doctor_id: null });
+    await refreshContacts();
+  });
+  return div;
+}
+
+function familyContactCard(member) {
+  const div = document.createElement("div");
+  div.className = "contact-item";
+  div.innerHTML = `
+    <div class="ci-main">
+      <span class="ci-name">${escapeHtml(member.name)}</span>
+      <span class="ci-badge ci-badge-family">family</span>
+      <button class="ci-remove" title="Remove">×</button>
+    </div>
+    <div class="ci-meta">${escapeHtml(member.relationship)}</div>
+    <div class="ci-phone">${escapeHtml(member.contact_number)}</div>
+  `;
+  div.querySelector(".ci-remove").addEventListener("click", async () => {
+    if (!confirm(`Remove ${member.name}?`)) return;
+    await api.delete(`/family/${member.id}`);
+    await refreshContacts();
+  });
   return div;
 }
 
@@ -379,6 +432,32 @@ $("nf-save").addEventListener("click", async () => {
   });
   $("modal-family").hidden = true;
   ["nf-name", "nf-phone", "nf-relationship"].forEach((id) => ($(id).value = ""));
+  await refreshContacts();
+});
+
+// ----- assign doctor modal ----------------------------------------------
+
+$("change-doctor-btn").addEventListener("click", () => {
+  if (!activePatient) { alert("Select a patient first."); return; }
+  const sel = $("assign-doctor-select");
+  sel.innerHTML = `<option value="">— none —</option>`;
+  for (const d of allDoctors) {
+    const opt = document.createElement("option");
+    opt.value = d.id;
+    opt.textContent = `${d.name} · ${d.specialty}`;
+    if (d.id === activePatient.doctor_id) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  $("modal-assign-doctor").hidden = false;
+});
+$("modal-assign-doctor-close").addEventListener("click", () => {
+  $("modal-assign-doctor").hidden = true;
+});
+$("assign-doctor-save").addEventListener("click", async () => {
+  if (!activePatient) return;
+  const doctorId = $("assign-doctor-select").value || null;
+  activePatient = await api.patch(`/patients/${activePatient.id}/doctor`, { doctor_id: doctorId });
+  $("modal-assign-doctor").hidden = true;
   await refreshContacts();
 });
 

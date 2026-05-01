@@ -47,3 +47,11 @@ class NotificationService:
             f"Snapshot: {snapshot_url}"
         )
         return self._notifier.send(contact, msg)
+
+    def send_call_to_patient(self, contact: str, patient_name: str) -> bool:
+        msg = (
+            f"VitalSense EMERGENCY — {patient_name}, you did not respond to our "
+            "verification prompt. Please confirm you are OK or emergency services "
+            "will be dispatched."
+        )
+        return self._notifier.send(contact, msg)

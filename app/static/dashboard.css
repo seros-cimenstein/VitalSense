@@ -436,6 +436,8 @@ input:focus { border-color: var(--accent); }
 }
 .event-item.ev-warn::before { border-color: var(--warn); background: var(--warn); }
 .event-item.ev-ok::before { border-color: var(--ok); background: var(--ok); }
+.event-item.ev-call::before { border-color: var(--accent); background: var(--accent); }
+.event-item.ev-call .event-type { color: var(--accent); }
 .event-time {
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
@@ -549,6 +551,21 @@ input:focus { border-color: var(--accent); }
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
+
+/* remove / delete button on contact items */
+.ci-remove {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--ink-mute);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.ci-remove:hover { color: var(--warn); background: var(--warn-soft); }
 
 /* select input */
 select {

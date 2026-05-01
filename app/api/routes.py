@@ -138,6 +138,35 @@ def list_family(patient_id: str, repo: Repository = Depends(get_repo)) -> List[F
     return repo.list_family_for_patient(patient_id)
 
 
+class AssignDoctorRequest(BaseModel):
+    doctor_id: Optional[str] = None
+
+
+@router.patch("/patients/{patient_id}/doctor", response_model=Patient)
+def assign_doctor(
+    patient_id: str,
+    body: AssignDoctorRequest,
+    repo: Repository = Depends(get_repo),
+) -> Patient:
+    patient = repo.get_patient(patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="patient not found")
+    patient.doctor_id = body.doctor_id
+    return repo.save_patient(patient)
+
+
+@router.delete("/doctors/{doctor_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_doctor(doctor_id: str, repo: Repository = Depends(get_repo)):
+    if not repo.delete_doctor(doctor_id):
+        raise HTTPException(status_code=404, detail="doctor not found")
+
+
+@router.delete("/family/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_family_member(member_id: str, repo: Repository = Depends(get_repo)):
+    if not repo.delete_family_member(member_id):
+        raise HTTPException(status_code=404, detail="family member not found")
+
+
 @router.post("/family", response_model=FamilyMember, status_code=status.HTTP_201_CREATED)
 def create_family_member(
     body: CreateFamilyRequest, repo: Repository = Depends(get_repo)

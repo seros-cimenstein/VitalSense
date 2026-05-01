@@ -112,7 +112,10 @@
         <section class="card">
           <header class="simulator-head">
             <h2 class="section-title">Connected contacts</h2>
-            <button id="add-family-btn" class="btn-ghost">+ add family</button>
+            <div style="display:flex;gap:8px">
+              <button id="change-doctor-btn" class="btn-ghost">change doctor</button>
+              <button id="add-family-btn" class="btn-ghost">+ add family</button>
+            </div>
           </header>
           <div id="contacts-content"><p class="hint">No contacts linked yet.</p></div>
         </section>
@@ -209,6 +212,21 @@
         <label class="modal-full">Relationship <input type="text" id="nf-relationship" placeholder="e.g. son, spouse, daughter" required /></label>
       </div>
       <button id="nf-save" class="btn-primary">add family member</button>
+    </div>
+  </div>
+
+  <!-- Assign / change doctor modal -->
+  <div id="modal-assign-doctor" class="modal-overlay" hidden>
+    <div class="modal">
+      <header class="modal-head">
+        <h2>Assign doctor</h2>
+        <button id="modal-assign-doctor-close" class="btn-ghost">close</button>
+      </header>
+      <label style="display:flex;flex-direction:column;gap:6px;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-soft);margin-bottom:16px">
+        Doctor
+        <select id="assign-doctor-select"><option value="">— none —</option></select>
+      </label>
+      <button id="assign-doctor-save" class="btn-primary">save</button>
     </div>
   </div>
 
