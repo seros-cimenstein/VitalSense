@@ -1,17 +1,39 @@
 /* VitalSense dashboard — vanilla JS client. */
 
+// ----- auth -----------------------------------------------------------------
+
+const TOKEN_KEY = "vs_token";
+
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+function authHeaders() {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+function handleUnauthorized() {
+  localStorage.removeItem(TOKEN_KEY);
+  window.location.replace("/login");
+}
+
+if (!getToken()) { window.location.replace("/login"); }
+
+// ----- api ------------------------------------------------------------------
+
 const api = {
   async get(path) {
-    const r = await fetch(`/api${path}`);
+    const r = await fetch(`/api${path}`, { headers: { ...authHeaders() } });
+    if (r.status === 401) { handleUnauthorized(); return null; }
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return r.json();
   },
   async post(path, body) {
     const r = await fetch(`/api${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: body ? JSON.stringify(body) : undefined,
     });
+    if (r.status === 401) { handleUnauthorized(); return null; }
     if (!r.ok) {
       const text = await r.text();
       throw new Error(`${r.status} ${path}: ${text}`);
@@ -21,23 +43,29 @@ const api = {
   async put(path, body) {
     const r = await fetch(`/api${path}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(body),
     });
+    if (r.status === 401) { handleUnauthorized(); return null; }
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return r.json();
   },
   async patch(path, body) {
     const r = await fetch(`/api${path}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(body),
     });
+    if (r.status === 401) { handleUnauthorized(); return null; }
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return r.json();
   },
   async delete(path) {
-    const r = await fetch(`/api${path}`, { method: "DELETE" });
+    const r = await fetch(`/api${path}`, {
+      method: "DELETE",
+      headers: { ...authHeaders() },
+    });
+    if (r.status === 401) { handleUnauthorized(); return; }
     if (!r.ok) throw new Error(`${r.status} ${path}`);
   },
 };
@@ -45,7 +73,10 @@ const api = {
 // state
 let activePatient = null;
 let pollHandle = null;
+let streamHandle = null;
+let countdownHandle = null;
 let allDoctors = [];
+const STREAM_INTERVAL_MS = 2500;
 
 // element refs
 const $ = (id) => document.getElementById(id);
@@ -80,6 +111,8 @@ async function refreshPatients() {
 }
 
 async function selectPatient(id) {
+  stopTelemetryStream();
+  stopCountdown();
   activePatient = await api.get(`/patients/${id}`);
   emptyState.hidden = true;
   patientView.hidden = false;
@@ -116,10 +149,13 @@ function renderPatient() {
 async function refreshTimeline() {
   if (!activePatient) return;
 
-  const [events, records] = await Promise.all([
+  const [events, records, status] = await Promise.all([
     api.get(`/events/${activePatient.id}?limit=30`),
-    api.get(`/records/${activePatient.id}?limit=1`),
+    api.get(`/records/${activePatient.id}?limit=30`),
+    api.get(`/patients/${activePatient.id}/status`),
   ]);
+  renderRiskStatus(status);
+  renderTrendChart(records.slice().reverse());
 
   // latest record drives vital cards
   if (records.length) {
@@ -136,21 +172,19 @@ async function refreshTimeline() {
     if (tempBreach) document.querySelectorAll(".vital-card")[1].classList.add("breach");
   }
 
-  // verification pending?
-  const pending = events.find((e) => e.type === "verification_sent");
-  const confirmed = events.find((e) => e.type === "verification_confirmed");
-  const sosFired = events.find((e) => e.type === "sos_triggered");
-  // banner shows if the most recent verification_sent is newer than any confirm/sos
-  const showBanner =
-    pending &&
-    (!confirmed || new Date(confirmed.timestamp) < new Date(pending.timestamp)) &&
-    (!sosFired || new Date(sosFired.timestamp) < new Date(pending.timestamp));
-  verBanner.hidden = !showBanner;
+  verBanner.hidden = !status.verification_pending;
+  if (status.verification_pending) {
+    startCountdown(status.verification_deadline);
+  } else {
+    stopCountdown();
+  }
 
   // status text
-  if (sosFired && (!confirmed || new Date(sosFired.timestamp) > new Date(confirmed.timestamp))) {
+  if (status.summary === "SOS escalation is active") {
     $("status-text").textContent = "SOS active";
-  } else if (showBanner) {
+  } else if (status.risk_level === "critical") {
+    $("status-text").textContent = "critical vitals";
+  } else if (status.verification_pending) {
     $("status-text").textContent = "awaiting verification";
   } else {
     $("status-text").textContent = "monitoring";
@@ -172,6 +206,150 @@ async function refreshTimeline() {
     `;
     list.appendChild(li);
   }
+  await refreshSnapshot();
+}
+
+function renderRiskStatus(status) {
+  const panel = $("risk-panel");
+  panel.classList.remove("risk-normal", "risk-warning", "risk-critical");
+  panel.classList.add(`risk-${status.risk_level}`);
+  $("risk-level").textContent = status.risk_level;
+  $("risk-score").textContent = `${status.risk_score}/100`;
+  $("risk-summary").textContent = status.summary;
+  $("risk-meter-fill").style.width = `${status.risk_score}%`;
+  $("call-state").textContent = status.call_attempted ? "call: placed" : "call: waiting";
+  $("family-state").textContent = `family: ${status.family_notifications_sent}`;
+  $("doctor-state").textContent = `doctor: ${status.doctor_notifications_sent}`;
+}
+
+async function refreshSnapshot() {
+  if (!activePatient) return;
+  const snapshot = await api.get(`/snapshot/${activePatient.id}`);
+  $("snapshot-reason").textContent = snapshot.reason;
+  $("snapshot-record-count").textContent = snapshot.recent_records.length;
+  $("snapshot-time").textContent = new Date(snapshot.triggered_at).toLocaleTimeString();
+
+  const list = $("snapshot-records");
+  list.innerHTML = "";
+  const records = snapshot.recent_records.slice(0, 5);
+  if (!records.length) {
+    list.innerHTML = `<p class="hint">No telemetry records yet.</p>`;
+    return;
+  }
+  for (const record of records) {
+    const item = document.createElement("div");
+    item.className = "snapshot-record";
+    item.innerHTML = `
+      <span>${new Date(record.timestamp).toLocaleTimeString()}</span>
+      <strong>${record.heart_rate} bpm</strong>
+      <strong>${Number(record.body_temperature).toFixed(1)} °C</strong>
+      <span>${record.daily_steps} steps</span>
+    `;
+    list.appendChild(item);
+  }
+}
+
+function startCountdown(deadline) {
+  if (countdownHandle) clearInterval(countdownHandle);
+  updateCountdown(deadline);
+  countdownHandle = setInterval(() => updateCountdown(deadline), 500);
+}
+
+function stopCountdown() {
+  if (countdownHandle) clearInterval(countdownHandle);
+  countdownHandle = null;
+  $("verification-countdown").textContent = "—";
+}
+
+function updateCountdown(deadline) {
+  if (!deadline) {
+    $("verification-countdown").textContent = "verification pending";
+    return;
+  }
+  const remaining = Math.max(0, Math.ceil((new Date(deadline) - new Date()) / 1000));
+  $("verification-countdown").textContent = `${remaining}s left before SOS escalation`;
+}
+
+function renderTrendChart(records) {
+  const canvas = $("trend-chart");
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  $("trend-count").textContent = `${records.length} readings`;
+
+  ctx.fillStyle = "#fffaf2";
+  ctx.fillRect(0, 0, width, height);
+  ctx.strokeStyle = "rgba(26, 42, 46, 0.08)";
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i += 1) {
+    const y = (height / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(36, y);
+    ctx.lineTo(width - 16, y);
+    ctx.stroke();
+  }
+
+  if (records.length < 2) {
+    ctx.fillStyle = "#8a9396";
+    ctx.font = "14px Manrope, sans-serif";
+    ctx.fillText("Push or stream telemetry to build a trend.", 36, height / 2);
+    return;
+  }
+
+  drawSeries(ctx, records, {
+    key: "heart_rate",
+    color: "#0f4c4f",
+    min: 40,
+    max: 160,
+    top: 22,
+    bottom: height - 34,
+    left: 36,
+    right: width - 18,
+  });
+  drawSeries(ctx, records, {
+    key: "body_temperature",
+    color: "#c84a3b",
+    min: 35,
+    max: 41,
+    top: 22,
+    bottom: height - 34,
+    left: 36,
+    right: width - 18,
+  });
+
+  ctx.font = "12px Manrope, sans-serif";
+  ctx.fillStyle = "#0f4c4f";
+  ctx.fillText("Heart rate", 36, 18);
+  ctx.fillStyle = "#c84a3b";
+  ctx.fillText("Temperature", 120, 18);
+}
+
+function drawSeries(ctx, records, opts) {
+  const span = Math.max(1, records.length - 1);
+  const yFor = (value) => {
+    const pct = (clamp(value, opts.min, opts.max) - opts.min) / (opts.max - opts.min);
+    return opts.bottom - pct * (opts.bottom - opts.top);
+  };
+  ctx.strokeStyle = opts.color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  records.forEach((record, index) => {
+    const x = opts.left + (index / span) * (opts.right - opts.left);
+    const y = yFor(record[opts.key]);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = opts.color;
+  records.forEach((record, index) => {
+    const x = opts.left + (index / span) * (opts.right - opts.left);
+    const y = yFor(record[opts.key]);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function eventClass(type) {
@@ -318,13 +496,16 @@ $("save-thresholds").addEventListener("click", async () => {
 
 $("push-telemetry").addEventListener("click", async () => {
   if (!activePatient) return;
-  const body = {
-    heart_rate: parseInt($("sim-hr").value, 10),
-    body_temperature: parseFloat($("sim-temp").value),
-    daily_steps: parseInt($("sim-steps").value || "0", 10),
-  };
-  await api.post(`/telemetry/${activePatient.id}`, body);
-  await refreshTimeline();
+  await pushSimulatedReading({ jitter: false });
+});
+
+$("stream-telemetry").addEventListener("click", () => {
+  if (!activePatient) return;
+  if (streamHandle) {
+    stopTelemetryStream();
+  } else {
+    startTelemetryStream();
+  }
 });
 
 document.querySelectorAll(".chip").forEach((chip) => {
@@ -334,10 +515,89 @@ document.querySelectorAll(".chip").forEach((chip) => {
   });
 });
 
+function startTelemetryStream() {
+  pushSimulatedReading({ jitter: true });
+  streamHandle = setInterval(() => pushSimulatedReading({ jitter: true }), STREAM_INTERVAL_MS);
+  $("stream-telemetry").textContent = "stop stream";
+  $("push-telemetry").disabled = true;
+  document.querySelector(".simulator-actions").classList.add("streaming");
+}
+
+function stopTelemetryStream() {
+  if (!streamHandle) return;
+  clearInterval(streamHandle);
+  streamHandle = null;
+  $("stream-telemetry").textContent = "start stream";
+  $("push-telemetry").disabled = false;
+  document.querySelector(".simulator-actions").classList.remove("streaming");
+}
+
+async function pushSimulatedReading({ jitter }) {
+  if (!activePatient) return;
+
+  const body = buildSimulatedReading(jitter);
+  await api.post(`/telemetry/${activePatient.id}`, body);
+
+  $("sim-hr").value = body.heart_rate;
+  $("sim-temp").value = body.body_temperature.toFixed(1);
+  $("sim-steps").value = body.daily_steps;
+  await refreshTimeline();
+}
+
+function buildSimulatedReading(jitter) {
+  const baseHr = parseInt($("sim-hr").value, 10);
+  const baseTemp = parseFloat($("sim-temp").value);
+  const baseSteps = parseInt($("sim-steps").value || "0", 10);
+
+  if (!jitter) {
+    return {
+      heart_rate: baseHr,
+      body_temperature: baseTemp,
+      daily_steps: baseSteps,
+    };
+  }
+
+  return {
+    heart_rate: clamp(baseHr + randomInt(-3, 3), 0, 300),
+    body_temperature: clamp(roundOne(baseTemp + randomFloat(-0.12, 0.12)), 20, 45),
+    daily_steps: Math.max(0, baseSteps + randomInt(0, 18)),
+  };
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function randomFloat(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function roundOne(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
 $("confirm-ok").addEventListener("click", async () => {
   if (!activePatient) return;
   await api.post(`/verify/${activePatient.id}`);
   await refreshTimeline();
+});
+
+$("force-sos").addEventListener("click", async () => {
+  if (!activePatient) return;
+  if (!confirm(`Force SOS escalation for ${activePatient.name}?`)) return;
+  await api.post(`/sos/${activePatient.id}/force`);
+  await refreshTimeline();
+});
+
+$("seed-demo-btn").addEventListener("click", async () => {
+  const created = await api.post("/demo/seed");
+  await refreshDoctors();
+  await refreshPatients();
+  await selectPatient(created.id);
 });
 
 // ----- new patient modal ------------------------------------------------
@@ -460,6 +720,40 @@ $("assign-doctor-save").addEventListener("click", async () => {
   $("modal-assign-doctor").hidden = true;
   await refreshContacts();
 });
+
+// ----- delete patient ---------------------------------------------------
+
+$("delete-patient-btn").addEventListener("click", async () => {
+  if (!activePatient) return;
+  if (!confirm(`Delete ${activePatient.name}? This cannot be undone.`)) return;
+  await api.delete(`/patients/${activePatient.id}`);
+  activePatient = null;
+  stopTelemetryStream();
+  stopCountdown();
+  if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+  patientView.hidden = true;
+  thresholdCard.hidden = true;
+  emptyState.hidden = false;
+  await refreshPatients();
+});
+
+// ----- logout -----------------------------------------------------------
+
+$("logout-btn").addEventListener("click", () => {
+  localStorage.removeItem(TOKEN_KEY);
+  window.location.replace("/login");
+});
+
+// ----- responsive trend chart -------------------------------------------
+
+function resizeChart() {
+  const canvas = $("trend-chart");
+  const wrap = canvas.parentElement;
+  canvas.width = wrap.clientWidth || 860;
+  canvas.height = 260;
+}
+
+new ResizeObserver(resizeChart).observe($("trend-chart").parentElement);
 
 // ----- utils ------------------------------------------------------------
 

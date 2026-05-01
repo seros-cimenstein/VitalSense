@@ -26,9 +26,12 @@
         <span class="brand-sub">active health protection</span>
       </div>
     </div>
-    <div class="topbar-status">
-      <span class="dot dot-live"></span>
-      <span id="status-text">monitoring</span>
+    <div class="topbar-right">
+      <div class="topbar-status">
+        <span class="dot dot-live"></span>
+        <span id="status-text">monitoring</span>
+      </div>
+      <button id="logout-btn" class="btn-ghost" style="font-size:12px">sign out</button>
     </div>
   </header>
 
@@ -37,7 +40,10 @@
     <aside class="sidebar">
       <section class="card">
         <h2 class="section-title">Patients</h2>
-        <button id="new-patient-btn" class="btn-ghost">+ register</button>
+        <div class="sidebar-actions">
+          <button id="new-patient-btn" class="btn-ghost">+ register</button>
+          <button id="seed-demo-btn" class="btn-ghost">load demo</button>
+        </div>
         <ul id="patient-list" class="patient-list"></ul>
       </section>
 
@@ -75,11 +81,33 @@
             <h1 id="patient-name">—</h1>
             <p id="patient-meta" class="patient-meta">—</p>
           </div>
-          <div class="patient-bmi">
-            <span class="metric-label">BMI</span>
-            <span id="patient-bmi" class="metric-value-mono">—</span>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div class="patient-bmi">
+              <span class="metric-label">BMI</span>
+              <span id="patient-bmi" class="metric-value-mono">—</span>
+            </div>
+            <button id="delete-patient-btn" class="btn-ghost" style="font-size:12px;color:var(--warn)">delete</button>
           </div>
         </header>
+
+        <section id="risk-panel" class="risk-panel risk-normal">
+          <div>
+            <span class="metric-label">Risk state</span>
+            <div class="risk-line">
+              <span id="risk-level">normal</span>
+              <span id="risk-score">0</span>
+            </div>
+            <p id="risk-summary">Latest vitals are within personalized limits</p>
+          </div>
+          <div class="risk-meter" aria-hidden="true">
+            <span id="risk-meter-fill"></span>
+          </div>
+          <div class="escalation-strip">
+            <span id="call-state">call: waiting</span>
+            <span id="family-state">family: 0</span>
+            <span id="doctor-state">doctor: 0</span>
+          </div>
+        </section>
 
         <div class="vitals-grid">
           <article class="vital-card">
@@ -125,9 +153,40 @@
           <div>
             <strong>Are you OK?</strong>
             <p>VitalSense detected a threshold breach. Confirm to cancel SOS.</p>
+            <span id="verification-countdown" class="countdown">—</span>
           </div>
           <button id="confirm-ok" class="btn-confirm">I'm OK</button>
         </div>
+
+        <!-- Doctor snapshot -->
+        <section class="card snapshot-card">
+          <header class="simulator-head">
+            <h2 class="section-title">Doctor snapshot</h2>
+            <span id="snapshot-time" class="hint">not generated</span>
+          </header>
+          <div class="snapshot-grid">
+            <div>
+              <span class="metric-label">Snapshot reason</span>
+              <p id="snapshot-reason" class="snapshot-reason">Select or stream telemetry to build a clinical snapshot.</p>
+            </div>
+            <div class="snapshot-stat">
+              <span class="metric-label">Records</span>
+              <span id="snapshot-record-count" class="metric-value-mono">0</span>
+            </div>
+          </div>
+          <div id="snapshot-records" class="snapshot-records"></div>
+        </section>
+
+        <!-- Trends -->
+        <section class="card">
+          <header class="simulator-head">
+            <h2 class="section-title">Vital trends</h2>
+            <span id="trend-count" class="hint">0 readings</span>
+          </header>
+          <div class="chart-wrap">
+            <canvas id="trend-chart"></canvas>
+          </div>
+        </section>
 
         <!-- Telemetry simulator -->
         <section class="card simulator">
@@ -139,7 +198,11 @@
             <label>HR (bpm) <input type="number" id="sim-hr" value="78" /></label>
             <label>Temp (°C) <input type="number" step="0.1" id="sim-temp" value="36.7" /></label>
             <label>Steps <input type="number" id="sim-steps" value="0" /></label>
-            <button id="push-telemetry" class="btn-primary">push reading</button>
+            <div class="simulator-actions">
+              <button id="push-telemetry" class="btn-ghost">push once</button>
+              <button id="stream-telemetry" class="btn-primary">start stream</button>
+              <button id="force-sos" class="btn-danger">force SOS</button>
+            </div>
           </div>
           <div class="quick-presets">
             <span class="hint">presets:</span>

@@ -42,14 +42,15 @@ class SOSService:
         )
 
         # Call the patient first
+        call_sent = self._notify.send_call_to_patient(patient.contact_number, patient.name)
         self._repo.append_event(
             Event(
                 patient_id=patient.id,
                 type=EventType.CALL_ATTEMPTED,
                 message=f"Automated call placed to {patient.name} ({patient.contact_number}).",
+                metadata={"delivered": call_sent, "contact": patient.contact_number},
             )
         )
-        self._notify.send_call_to_patient(patient.contact_number, patient.name)
 
         snapshot = self._build_snapshot(patient, reason)
         self._notify_family(patient, reason)
@@ -69,7 +70,7 @@ class SOSService:
     def _notify_family(self, patient: Patient, reason) -> None:
         family = self._repo.list_family_for_patient(patient.id)
         for member in family:
-            self._notify.send_family_sms(
+            delivered = self._notify.send_family_sms(
                 contact=member.contact_number,
                 patient_name=patient.name,
                 detail=reason.detail,
@@ -80,7 +81,11 @@ class SOSService:
                     patient_id=patient.id,
                     type=EventType.FAMILY_NOTIFIED,
                     message=f"SMS sent to {member.relationship} ({member.name}).",
-                    metadata={"family_member_id": member.id},
+                    metadata={
+                        "family_member_id": member.id,
+                        "delivered": delivered,
+                        "contact": member.contact_number,
+                    },
                 )
             )
 
@@ -92,7 +97,7 @@ class SOSService:
             return
 
         snapshot_url = f"{self._snapshot_base_url}/{patient.id}"
-        self._notify.send_doctor_alert(
+        delivered = self._notify.send_doctor_alert(
             contact=doctor.contact_number,
             patient_name=patient.name,
             snapshot_url=snapshot_url,
@@ -102,7 +107,12 @@ class SOSService:
                 patient_id=patient.id,
                 type=EventType.DOCTOR_NOTIFIED,
                 message=f"Snapshot link shared with Dr. {doctor.name} ({doctor.specialty}).",
-                metadata={"doctor_id": doctor.id, "snapshot_url": snapshot_url},
+                metadata={
+                    "doctor_id": doctor.id,
+                    "snapshot_url": snapshot_url,
+                    "delivered": delivered,
+                    "contact": doctor.contact_number,
+                },
             )
         )
 

@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import reset_graph
+from app.auth import create_access_token
 from app.db.repository import reset_repository
 from app.main import app
 
@@ -20,8 +21,14 @@ def _fresh_state():
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def auth_headers():
+    token = create_access_token("admin")
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def client(auth_headers):
+    return TestClient(app, headers=auth_headers)
 
 
 def test_health_endpoint(client):
@@ -106,6 +113,25 @@ def test_telemetry_breach_starts_verification(client):
     assert r.json() == {"confirmed": True}
 
 
+def test_patient_status_reports_risk_and_countdown(client):
+    pid = client.post("/api/patients", json={
+        "name": "Risk", "contact_number": "y", "age": 30,
+        "height_cm": 170, "weight_kg": 70,
+    }).json()["id"]
+
+    client.post(f"/api/telemetry/{pid}", json={
+        "heart_rate": 150, "body_temperature": 36.7,
+    })
+
+    r = client.get(f"/api/patients/{pid}/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["risk_level"] in {"warning", "critical"}
+    assert body["verification_pending"] is True
+    assert body["seconds_remaining"] is not None
+    assert body["latest_record"]["heart_rate"] == 150
+
+
 def test_telemetry_for_unknown_patient_404(client):
     r = client.post("/api/telemetry/nope", json={
         "heart_rate": 80, "body_temperature": 36.7,
@@ -139,6 +165,22 @@ def test_snapshot_endpoint(client):
     assert len(r.json()["recent_records"]) >= 1
 
 
+def test_force_sos_endpoint(client):
+    pid = client.post("/api/patients", json={
+        "name": "Escalate", "contact_number": "y", "age": 40,
+        "height_cm": 170, "weight_kg": 70,
+    }).json()["id"]
+    client.post(f"/api/telemetry/{pid}", json={"heart_rate": 145, "body_temperature": 36.7})
+
+    r = client.post(f"/api/sos/{pid}/force")
+    assert r.status_code == 200
+    assert r.json()["patient"]["id"] == pid
+
+    status = client.get(f"/api/patients/{pid}/status").json()
+    assert status["sos_active"] is True
+    assert status["call_attempted"] is True
+
+
 def test_register_family_member(client):
     pid = client.post("/api/patients", json={
         "name": "Fam", "contact_number": "y", "age": 50,
@@ -153,3 +195,18 @@ def test_register_family_member(client):
     })
     assert r.status_code == 201
     assert r.json()["patient_id"] == pid
+
+
+def test_seed_demo_creates_complete_scenario(client):
+    r = client.post("/api/demo/seed")
+    assert r.status_code == 201
+    patient = r.json()
+    assert patient["name"] == "Ahmet Yilmaz"
+    assert patient["doctor_id"] is not None
+
+    family = client.get(f"/api/family/{patient['id']}").json()
+    records = client.get(f"/api/records/{patient['id']}").json()
+    events = client.get(f"/api/events/{patient['id']}").json()
+    assert len(family) == 1
+    assert len(records) >= 5
+    assert any(e["type"] == "threshold_breach" for e in events)

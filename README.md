@@ -48,7 +48,10 @@ vitalsense/
 │   └── main.py            # FastAPI entrypoint
 ├── tests/                 # pytest suite
 ├── scripts/
-│   └── demo.py            # End-to-end SOS demo (Ahmet's scenario)
+│   ├── demo.py            # End-to-end SOS demo (Ahmet's scenario)
+│   ├── scenario_runner.py # Deterministic core scenarios
+│   ├── export_snapshot.py # JSON doctor handoff payload exporter
+│   └── load_simulation.py # Telemetry burst/load simulation
 ├── requirements.txt
 └── README.md
 ```
@@ -62,6 +65,11 @@ pip install -r requirements.txt
 
 # 2. Run the demo (no Firebase needed — uses in-memory store)
 python scripts/demo.py
+
+# Optional: run deterministic scenarios and tooling
+python scripts/scenario_runner.py timeout
+python scripts/export_snapshot.py fever --output /tmp/fever-snapshot.json
+python scripts/load_simulation.py --readings 1000 --spike-every 25
 
 # 3. Run the tests
 pytest -v
@@ -108,3 +116,5 @@ pytest tests/test_anomaly_engine.py  # single file
 ```
 
 The suite covers: adapter conformance, threshold evaluation, verification timeout, SOS flow, and API routes.
+
+See `docs/DEMO_TOOLS.md` for the full demo/tooling guide.

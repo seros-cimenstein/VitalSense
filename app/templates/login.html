@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VitalSense — Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/dashboard.css" />
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .login-wrap {
+      width: 100%;
+      max-width: 380px;
+      padding: 16px;
+      position: relative;
+      z-index: 1;
+    }
+    .login-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 32px;
+    }
+    .login-brand-mark {
+      width: 36px;
+      height: 36px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-brand-name {
+      font-family: "Fraunces", serif;
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .login-brand-sub {
+      font-size: 11px;
+      color: var(--ink-mute);
+      display: block;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+    }
+    .login-card {
+      background: var(--bg-card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-md);
+      padding: 32px;
+    }
+    .login-card h1 {
+      font-family: "Fraunces", serif;
+      font-size: 22px;
+      font-weight: 500;
+      margin: 0 0 6px;
+    }
+    .login-card p {
+      color: var(--ink-soft);
+      font-size: 13px;
+      margin: 0 0 24px;
+    }
+    .login-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 14px;
+    }
+    .login-field label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--ink-soft);
+      font-weight: 600;
+    }
+    .login-field input {
+      padding: 10px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elev);
+      color: var(--ink);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .login-field input:focus {
+      border-color: var(--accent);
+    }
+    .login-submit {
+      width: 100%;
+      margin-top: 8px;
+    }
+    .login-error {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: var(--warn-soft);
+      color: var(--warn);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="grain"></div>
+  <div class="login-wrap">
+    <div class="login-brand">
+      <div class="login-brand-mark">
+        <svg width="20" height="20" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+          <path d="M2 14 L8 14 L10 9 L14 19 L17 11 L19 14 L26 14"
+                stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <div>
+        <span class="login-brand-name">VitalSense</span>
+        <span class="login-brand-sub">active health protection</span>
+      </div>
+    </div>
+    <div class="login-card">
+      <h1>Sign in</h1>
+      <p>Enter your credentials to access the monitoring dashboard.</p>
+      <form id="login-form" autocomplete="on">
+        <div class="login-field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" autocomplete="username" required />
+        </div>
+        <div class="login-field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn-primary login-submit">Sign in</button>
+        <div id="login-error" class="login-error" hidden>Incorrect username or password.</div>
+      </form>
+    </div>
+  </div>
+  <script>
+    if (localStorage.getItem('vs_token')) {
+      window.location.replace('/');
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('login-error');
+      errEl.hidden = true;
+
+      const params = new URLSearchParams();
+      params.append('username', document.getElementById('username').value.trim());
+      params.append('password', document.getElementById('password').value);
+
+      try {
+        const r = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params.toString(),
+        });
+        if (!r.ok) {
+          errEl.hidden = false;
+          return;
+        }
+        const data = await r.json();
+        localStorage.setItem('vs_token', data.access_token);
+        window.location.replace('/');
+      } catch {
+        errEl.hidden = false;
+      }
+    });
+  </script>
+</body>
+</html>
