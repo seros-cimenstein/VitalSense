@@ -1,3 +1,12 @@
+---
+title: VitalSense
+emoji: 🫀
+colorFrom: red
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
 # VitalSense
 
 > Transforming passive wearable data into active, life-saving protection.
