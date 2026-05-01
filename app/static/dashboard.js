@@ -227,8 +227,20 @@ $("np-save").addEventListener("click", async () => {
     height_cm: parseFloat($("np-height").value),
     weight_kg: parseFloat($("np-weight").value),
   };
-  if (!body.name || !body.contact_number || !body.age) {
-    alert("name, phone, and age are required");
+  if (!body.name.trim() || !body.contact_number.trim()) {
+    alert("Name and phone are required.");
+    return;
+  }
+  if (!body.age || isNaN(body.age) || body.age < 1 || body.age > 130) {
+    alert("Age must be a number between 1 and 130.");
+    return;
+  }
+  if (!body.height_cm || isNaN(body.height_cm) || body.height_cm < 50 || body.height_cm > 250) {
+    alert("Height must be a number between 50 and 250 cm.");
+    return;
+  }
+  if (!body.weight_kg || isNaN(body.weight_kg) || body.weight_kg < 1 || body.weight_kg > 500) {
+    alert("Weight must be a number between 1 and 500 kg.");
     return;
   }
   const created = await api.post("/patients", body);

@@ -150,12 +150,12 @@
         <button id="modal-close" class="btn-ghost">close</button>
       </header>
       <div class="modal-grid">
-        <label>Name <input id="np-name" /></label>
-        <label>Phone <input id="np-phone" /></label>
-        <label>Location <input id="np-location" placeholder="optional" /></label>
-        <label>Age <input type="number" id="np-age" /></label>
-        <label>Height (cm) <input type="number" step="0.1" id="np-height" /></label>
-        <label>Weight (kg) <input type="number" step="0.1" id="np-weight" /></label>
+        <label>Name <input type="text" id="np-name" required /></label>
+        <label>Phone <input type="tel" id="np-phone" required /></label>
+        <label>Location <input type="text" id="np-location" placeholder="optional" /></label>
+        <label>Age <input type="number" id="np-age" min="1" max="130" step="1" required /></label>
+        <label>Height (cm) <input type="number" step="0.1" id="np-height" min="50" max="250" required /></label>
+        <label>Weight (kg) <input type="number" step="0.1" id="np-weight" min="1" max="500" required /></label>
       </div>
       <button id="np-save" class="btn-primary">register</button>
     </div>
