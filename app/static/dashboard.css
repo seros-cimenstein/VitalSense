@@ -490,3 +490,51 @@ input:focus { border-color: var(--accent); }
   gap: 12px;
   margin-bottom: 16px;
 }
+
+/* ── Mobile (≤ 480px) ───────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  /* topbar */
+  .topbar { padding: 12px 16px; }
+  .brand-sub { display: none; }
+  .brand-name { font-size: 18px; }
+  .brand-mark { width: 32px; height: 32px; }
+
+  /* layout */
+  .layout { padding: 12px 16px; gap: 12px; }
+  .card { padding: 14px; }
+
+  /* patient header */
+  .patient-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .patient-header h1 { font-size: 26px; }
+  .patient-bmi { text-align: left; }
+
+  /* vitals */
+  .vitals-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .vital-number { font-size: 34px; }
+  .vital-card { padding: 14px; }
+
+  /* simulator */
+  .simulator-grid { grid-template-columns: 1fr 1fr; }
+  .simulator-grid .btn-primary { grid-column: 1 / -1; }
+
+  /* modal */
+  .modal { padding: 16px; }
+  .modal-grid { grid-template-columns: 1fr; }
+  .modal-overlay { padding: 12px; align-items: flex-end; }
+  .modal { border-radius: var(--radius) var(--radius) 0 0; max-width: 100%; }
+
+  /* threshold grid */
+  .threshold-grid { grid-template-columns: 1fr 1fr; }
+
+  /* quick presets wrap nicely */
+  .quick-presets { gap: 6px; }
+  .chip { font-size: 11px; padding: 4px 10px; }
+
+  /* verification banner */
+  .verification-banner { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .btn-confirm { width: 100%; text-align: center; }
+}
