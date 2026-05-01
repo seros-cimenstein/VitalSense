@@ -385,10 +385,34 @@ input:focus { border-color: var(--accent); }
   gap: 12px;
   align-items: end;
 }
-.simulator-grid .btn-primary { width: auto; padding: 10px 18px; }
+.simulator-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.simulator-actions .btn-primary,
+.simulator-actions .btn-ghost {
+  width: auto;
+  min-width: 104px;
+  padding: 10px 14px;
+  white-space: nowrap;
+}
+.simulator-actions .btn-ghost { background: var(--bg-elev); }
+.simulator-actions.streaming .btn-primary {
+  background: var(--warn);
+}
 @media (max-width: 700px) {
   .simulator-grid { grid-template-columns: 1fr 1fr; }
-  .simulator-grid .btn-primary { grid-column: 1 / -1; }
+  .simulator-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .simulator-actions .btn-primary,
+  .simulator-actions .btn-ghost {
+    width: 100%;
+    min-width: 0;
+  }
 }
 .quick-presets {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
@@ -638,7 +662,7 @@ select:focus { border-color: var(--accent); }
 
   /* simulator */
   .simulator-grid { grid-template-columns: 1fr 1fr; }
-  .simulator-grid .btn-primary { grid-column: 1 / -1; }
+  .simulator-actions { grid-column: 1 / -1; }
 
   /* modal */
   .modal { padding: 16px; }

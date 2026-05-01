@@ -45,7 +45,9 @@ const api = {
 // state
 let activePatient = null;
 let pollHandle = null;
+let streamHandle = null;
 let allDoctors = [];
+const STREAM_INTERVAL_MS = 2500;
 
 // element refs
 const $ = (id) => document.getElementById(id);
@@ -80,6 +82,7 @@ async function refreshPatients() {
 }
 
 async function selectPatient(id) {
+  stopTelemetryStream();
   activePatient = await api.get(`/patients/${id}`);
   emptyState.hidden = true;
   patientView.hidden = false;
@@ -318,13 +321,16 @@ $("save-thresholds").addEventListener("click", async () => {
 
 $("push-telemetry").addEventListener("click", async () => {
   if (!activePatient) return;
-  const body = {
-    heart_rate: parseInt($("sim-hr").value, 10),
-    body_temperature: parseFloat($("sim-temp").value),
-    daily_steps: parseInt($("sim-steps").value || "0", 10),
-  };
-  await api.post(`/telemetry/${activePatient.id}`, body);
-  await refreshTimeline();
+  await pushSimulatedReading({ jitter: false });
+});
+
+$("stream-telemetry").addEventListener("click", () => {
+  if (!activePatient) return;
+  if (streamHandle) {
+    stopTelemetryStream();
+  } else {
+    startTelemetryStream();
+  }
 });
 
 document.querySelectorAll(".chip").forEach((chip) => {
@@ -333,6 +339,71 @@ document.querySelectorAll(".chip").forEach((chip) => {
     $("sim-temp").value = chip.dataset.temp;
   });
 });
+
+function startTelemetryStream() {
+  pushSimulatedReading({ jitter: true });
+  streamHandle = setInterval(() => pushSimulatedReading({ jitter: true }), STREAM_INTERVAL_MS);
+  $("stream-telemetry").textContent = "stop stream";
+  $("push-telemetry").disabled = true;
+  document.querySelector(".simulator-actions").classList.add("streaming");
+}
+
+function stopTelemetryStream() {
+  if (!streamHandle) return;
+  clearInterval(streamHandle);
+  streamHandle = null;
+  $("stream-telemetry").textContent = "start stream";
+  $("push-telemetry").disabled = false;
+  document.querySelector(".simulator-actions").classList.remove("streaming");
+}
+
+async function pushSimulatedReading({ jitter }) {
+  if (!activePatient) return;
+
+  const body = buildSimulatedReading(jitter);
+  await api.post(`/telemetry/${activePatient.id}`, body);
+
+  $("sim-hr").value = body.heart_rate;
+  $("sim-temp").value = body.body_temperature.toFixed(1);
+  $("sim-steps").value = body.daily_steps;
+  await refreshTimeline();
+}
+
+function buildSimulatedReading(jitter) {
+  const baseHr = parseInt($("sim-hr").value, 10);
+  const baseTemp = parseFloat($("sim-temp").value);
+  const baseSteps = parseInt($("sim-steps").value || "0", 10);
+
+  if (!jitter) {
+    return {
+      heart_rate: baseHr,
+      body_temperature: baseTemp,
+      daily_steps: baseSteps,
+    };
+  }
+
+  return {
+    heart_rate: clamp(baseHr + randomInt(-3, 3), 0, 300),
+    body_temperature: clamp(roundOne(baseTemp + randomFloat(-0.12, 0.12)), 20, 45),
+    daily_steps: Math.max(0, baseSteps + randomInt(0, 18)),
+  };
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function randomFloat(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function roundOne(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
 
 $("confirm-ok").addEventListener("click", async () => {
   if (!activePatient) return;

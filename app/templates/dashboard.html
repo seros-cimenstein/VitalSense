@@ -139,7 +139,10 @@
             <label>HR (bpm) <input type="number" id="sim-hr" value="78" /></label>
             <label>Temp (°C) <input type="number" step="0.1" id="sim-temp" value="36.7" /></label>
             <label>Steps <input type="number" id="sim-steps" value="0" /></label>
-            <button id="push-telemetry" class="btn-primary">push reading</button>
+            <div class="simulator-actions">
+              <button id="push-telemetry" class="btn-ghost">push once</button>
+              <button id="stream-telemetry" class="btn-primary">start stream</button>
+            </div>
           </div>
           <div class="quick-presets">
             <span class="hint">presets:</span>
