@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+firebase-credentials.json
+.pytest_cache/
+.coverage
+*.egg-info/
+.DS_Store
+.vscode/
+.idea/
