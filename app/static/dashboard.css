@@ -83,6 +83,30 @@ html, body {
 .topbar-right {
   display: flex; align-items: center; gap: 16px;
 }
+.session-pill {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  max-width: 220px;
+}
+.session-pill span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+.session-pill strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
 .topbar-status {
   display: flex; align-items: center; gap: 8px;
   font-size: 12px;
@@ -534,14 +558,17 @@ input:focus { border-color: var(--accent); }
 }
 .simulator-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   align-items: end;
 }
 .simulator-actions {
+  grid-column: 1 / -1;
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-start;
 }
 .simulator-actions .btn-primary,
 .simulator-actions .btn-ghost,
@@ -792,7 +819,21 @@ select:focus { border-color: var(--accent); }
 /* ── Mobile (≤ 480px) ───────────────────────────────────────────────── */
 @media (max-width: 480px) {
   /* topbar */
-  .topbar { padding: 12px 16px; }
+  .topbar {
+    padding: 12px 16px;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .topbar-right {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .topbar-status { display: none; }
+  .session-pill {
+    max-width: 150px;
+    padding: 5px 7px;
+  }
   .brand-sub { display: none; }
   .brand-name { font-size: 18px; }
   .brand-mark { width: 32px; height: 32px; }

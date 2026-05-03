@@ -6,7 +6,7 @@
   <title>VitalSense — Sign In</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/dashboard.css" />
   <style>
     body {
@@ -17,7 +17,7 @@
     }
     .login-wrap {
       width: 100%;
-      max-width: 380px;
+      max-width: 760px;
       padding: 16px;
       position: relative;
       z-index: 1;
@@ -108,6 +108,48 @@
       font-size: 13px;
       text-align: center;
     }
+    .role-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    .role-card {
+      text-align: left;
+      border: 1px solid var(--line-strong);
+      background: var(--bg-elev);
+      color: var(--ink);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+      cursor: pointer;
+      font-family: inherit;
+      min-height: 78px;
+    }
+    .role-card strong,
+    .role-card span {
+      display: block;
+    }
+    .role-card strong {
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .role-card span {
+      color: var(--ink-soft);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+    .role-card.active,
+    .role-card:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    @media (max-width: 720px) {
+      body { align-items: flex-start; }
+      .login-wrap { max-width: 420px; }
+      .role-grid { grid-template-columns: 1fr 1fr; }
+      .login-card { padding: 22px; }
+    }
   </style>
 </head>
 <body>
@@ -128,9 +170,24 @@
     </div>
     <div class="login-card">
       <h1>Sign in</h1>
-      <p>Enter your credentials to access the monitoring dashboard.</p>
-      <div style="background:var(--accent-soft);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:16px;font-size:12px;color:var(--accent);">
-        Demo credentials: <strong>admin</strong> / <strong>admin</strong>
+      <p>Choose a demo role or enter credentials manually.</p>
+      <div class="role-grid" aria-label="Demo role credentials">
+        <button type="button" class="role-card active" data-username="admin" data-password="admin">
+          <strong>Admin</strong>
+          <span>admin / admin</span>
+        </button>
+        <button type="button" class="role-card" data-username="patient" data-password="patient">
+          <strong>Patient</strong>
+          <span>patient / patient</span>
+        </button>
+        <button type="button" class="role-card" data-username="doctor" data-password="doctor">
+          <strong>Doctor</strong>
+          <span>doctor / doctor</span>
+        </button>
+        <button type="button" class="role-card" data-username="relative" data-password="relative">
+          <strong>Relative</strong>
+          <span>relative / relative</span>
+        </button>
       </div>
       <form id="login-form" autocomplete="on">
         <div class="login-field">
@@ -151,14 +208,29 @@
       window.location.replace('/');
     }
 
+    const usernameEl = document.getElementById('username');
+    const passwordEl = document.getElementById('password');
+
+    function chooseDemo(card) {
+      document.querySelectorAll('.role-card').forEach((el) => el.classList.remove('active'));
+      card.classList.add('active');
+      usernameEl.value = card.dataset.username;
+      passwordEl.value = card.dataset.password;
+    }
+
+    document.querySelectorAll('.role-card').forEach((card) => {
+      card.addEventListener('click', () => chooseDemo(card));
+    });
+    chooseDemo(document.querySelector('.role-card.active'));
+
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const errEl = document.getElementById('login-error');
       errEl.hidden = true;
 
       const params = new URLSearchParams();
-      params.append('username', document.getElementById('username').value.trim());
-      params.append('password', document.getElementById('password').value);
+      params.append('username', usernameEl.value.trim());
+      params.append('password', passwordEl.value);
 
       try {
         const r = await fetch('/api/auth/login', {
@@ -172,6 +244,14 @@
         }
         const data = await r.json();
         localStorage.setItem('vs_token', data.access_token);
+        localStorage.setItem('vs_user', JSON.stringify({
+          username: data.username,
+          role: data.role,
+          display_name: data.display_name,
+          patient_id: data.patient_id,
+          doctor_id: data.doctor_id,
+          family_member_id: data.family_member_id,
+        }));
         window.location.replace('/');
       } catch {
         errEl.hidden = false;

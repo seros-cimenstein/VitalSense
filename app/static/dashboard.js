@@ -3,8 +3,17 @@
 // ----- auth -----------------------------------------------------------------
 
 const TOKEN_KEY = "vs_token";
+const USER_KEY = "vs_user";
 
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+function readStoredUser() {
+  try {
+    return JSON.parse(localStorage.getItem(USER_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
 
 function authHeaders() {
   const t = getToken();
@@ -13,6 +22,7 @@ function authHeaders() {
 
 function handleUnauthorized() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
   window.location.replace("/login");
 }
 
@@ -73,6 +83,7 @@ const api = {
 
 // state
 let activePatient = null;
+let currentUser = readStoredUser();
 let pollHandle = null;
 let streamHandle = null;
 let countdownHandle = null;
@@ -87,6 +98,67 @@ const patientView = $("patient-view");
 const thresholdCard = $("threshold-card");
 const verBanner = $("verification-banner");
 
+function hasRole(...roles) {
+  return Boolean(currentUser && roles.includes(currentUser.role));
+}
+
+function canManageDirectory() {
+  return hasRole("admin");
+}
+
+function canTuneThresholds() {
+  return hasRole("admin", "doctor");
+}
+
+function canUseTelemetryControls() {
+  return hasRole("admin", "doctor", "patient");
+}
+
+function canVerifyPatient() {
+  return hasRole("admin", "patient");
+}
+
+function roleLabel(role) {
+  return {
+    admin: "Admin",
+    patient: "Patient",
+    doctor: "Doctor",
+    family: "Relative",
+  }[role] || "Account";
+}
+
+async function loadSession() {
+  const me = await api.get("/auth/me");
+  if (!me) return false;
+  currentUser = me;
+  localStorage.setItem(USER_KEY, JSON.stringify(me));
+  applyAccessControls();
+  return true;
+}
+
+function applyAccessControls() {
+  const role = currentUser?.role || "account";
+  $("session-role").textContent = roleLabel(role);
+  $("session-name").textContent = currentUser?.display_name || currentUser?.username || "signed in";
+
+  const canManage = canManageDirectory();
+  const canTune = canTuneThresholds();
+  const canUseTelemetry = canUseTelemetryControls();
+  const canVerify = canVerifyPatient();
+
+  $("new-patient-btn").hidden = !canManage;
+  $("new-doctor-btn").hidden = !canManage;
+  $("delete-patient-btn").hidden = !canManage;
+  $("contact-actions").hidden = !canManage;
+  $("save-thresholds").hidden = !canTune;
+  $("simulator-card").hidden = !canUseTelemetry;
+  $("confirm-ok").hidden = !canVerify;
+  $("force-sos").hidden = !canUseTelemetry;
+  ["hr-min", "hr-max", "t-min", "t-max"].forEach((id) => {
+    $(id).disabled = !canTune;
+  });
+}
+
 // ----- patients ---------------------------------------------------------
 
 async function refreshPatients() {
@@ -94,7 +166,8 @@ async function refreshPatients() {
   if (!patients) return;
   patientList.innerHTML = "";
   if (!patients.length) {
-    patientList.innerHTML = `<li class="hint">no patients yet</li>`;
+    const emptyText = canManageDirectory() ? "no patients yet" : "no patients visible";
+    patientList.innerHTML = `<li class="hint">${emptyText}</li>`;
     return;
   }
   for (const p of patients) {
@@ -121,6 +194,7 @@ async function selectPatient(id) {
   emptyState.hidden = true;
   patientView.hidden = false;
   thresholdCard.hidden = false;
+  applyAccessControls();
   await refreshPatients();
   renderPatient();
   await Promise.all([refreshTimeline(), refreshContacts()]);
@@ -379,7 +453,8 @@ async function refreshDoctors() {
   const list = $("doctor-list");
   list.innerHTML = "";
   if (!allDoctors.length) {
-    list.innerHTML = `<li class="hint" style="padding:6px 0">no doctors registered</li>`;
+    const emptyText = canManageDirectory() ? "no doctors registered" : "no doctors visible";
+    list.innerHTML = `<li class="hint" style="padding:6px 0">${emptyText}</li>`;
     return;
   }
   for (const d of allDoctors) {
@@ -389,17 +464,20 @@ async function refreshDoctors() {
       <div class="ci-main">
         <span class="ci-name">${escapeHtml(d.name)}</span>
         <span class="ci-badge ci-badge-doctor">doctor</span>
-        <button class="ci-remove" title="Delete doctor">×</button>
+        ${canManageDirectory() ? '<button class="ci-remove" title="Delete doctor">×</button>' : ''}
       </div>
       <div class="ci-meta">${escapeHtml(d.specialty)}${d.on_call_status ? ' · <span class="oncall-pill">on-call</span>' : ''}</div>
       <div class="ci-phone">${escapeHtml(d.contact_number)}</div>
     `;
-    li.querySelector(".ci-remove").addEventListener("click", async () => {
-      if (!confirm(`Delete Dr. ${d.name}? This cannot be undone.`)) return;
-      await api.delete(`/doctors/${d.id}`);
-      await refreshDoctors();
-      if (activePatient) await refreshContacts();
-    });
+    const removeBtn = li.querySelector(".ci-remove");
+    if (removeBtn) {
+      removeBtn.addEventListener("click", async () => {
+        if (!confirm(`Delete Dr. ${d.name}? This cannot be undone.`)) return;
+        await api.delete(`/doctors/${d.id}`);
+        await refreshDoctors();
+        if (activePatient) await refreshContacts();
+      });
+    }
     list.appendChild(li);
   }
 }
@@ -454,16 +532,19 @@ function doctorContactCard(doctor) {
     <div class="ci-main">
       <span class="ci-name">${escapeHtml(doctor.name)}</span>
       <span class="ci-badge ci-badge-doctor">doctor</span>
-      <button class="ci-remove" title="Unassign doctor">×</button>
+      ${canManageDirectory() ? '<button class="ci-remove" title="Unassign doctor">×</button>' : ''}
     </div>
     <div class="ci-meta">${escapeHtml(doctor.specialty)}${doctor.on_call_status ? ' · <span class="oncall-pill">on-call</span>' : ''}</div>
     <div class="ci-phone">${escapeHtml(doctor.contact_number)}</div>
   `;
-  div.querySelector(".ci-remove").addEventListener("click", async () => {
-    if (!confirm(`Unassign Dr. ${doctor.name} from this patient?`)) return;
-    activePatient = await api.patch(`/patients/${activePatient.id}/doctor`, { doctor_id: null });
-    await refreshContacts();
-  });
+  const removeBtn = div.querySelector(".ci-remove");
+  if (removeBtn) {
+    removeBtn.addEventListener("click", async () => {
+      if (!confirm(`Unassign Dr. ${doctor.name} from this patient?`)) return;
+      activePatient = await api.patch(`/patients/${activePatient.id}/doctor`, { doctor_id: null });
+      await refreshContacts();
+    });
+  }
   return div;
 }
 
@@ -474,16 +555,19 @@ function familyContactCard(member) {
     <div class="ci-main">
       <span class="ci-name">${escapeHtml(member.name)}</span>
       <span class="ci-badge ci-badge-family">family</span>
-      <button class="ci-remove" title="Remove">×</button>
+      ${canManageDirectory() ? '<button class="ci-remove" title="Remove">×</button>' : ''}
     </div>
     <div class="ci-meta">${escapeHtml(member.relationship)}</div>
     <div class="ci-phone">${escapeHtml(member.contact_number)}</div>
   `;
-  div.querySelector(".ci-remove").addEventListener("click", async () => {
-    if (!confirm(`Remove ${member.name}?`)) return;
-    await api.delete(`/family/${member.id}`);
-    await refreshContacts();
-  });
+  const removeBtn = div.querySelector(".ci-remove");
+  if (removeBtn) {
+    removeBtn.addEventListener("click", async () => {
+      if (!confirm(`Remove ${member.name}?`)) return;
+      await api.delete(`/family/${member.id}`);
+      await refreshContacts();
+    });
+  }
   return div;
 }
 
@@ -491,6 +575,7 @@ function familyContactCard(member) {
 
 $("save-thresholds").addEventListener("click", async () => {
   if (!activePatient) return;
+  if (!canTuneThresholds()) return;
   const body = {
     heart_rate_min: parseInt($("hr-min").value, 10),
     heart_rate_max: parseInt($("hr-max").value, 10),
@@ -503,11 +588,13 @@ $("save-thresholds").addEventListener("click", async () => {
 
 $("push-telemetry").addEventListener("click", async () => {
   if (!activePatient) return;
+  if (!canUseTelemetryControls()) return;
   await pushSimulatedReading({ jitter: false });
 });
 
 $("stream-telemetry").addEventListener("click", () => {
   if (!activePatient) return;
+  if (!canUseTelemetryControls()) return;
   if (streamHandle) {
     stopTelemetryStream();
   } else {
@@ -541,6 +628,7 @@ function stopTelemetryStream() {
 
 async function pushSimulatedReading({ jitter }) {
   if (!activePatient) return;
+  if (!canUseTelemetryControls()) return;
 
   const body = buildSimulatedReading(jitter);
   await api.post(`/telemetry/${activePatient.id}`, body);
@@ -589,12 +677,14 @@ function clamp(value, min, max) {
 
 $("confirm-ok").addEventListener("click", async () => {
   if (!activePatient) return;
+  if (!canVerifyPatient()) return;
   await api.post(`/verify/${activePatient.id}`);
   await refreshTimeline();
 });
 
 $("force-sos").addEventListener("click", async () => {
   if (!activePatient) return;
+  if (!canUseTelemetryControls()) return;
   if (!confirm(`Force SOS escalation for ${activePatient.name}?`)) return;
   await api.post(`/sos/${activePatient.id}/force`);
   await refreshTimeline();
@@ -611,6 +701,7 @@ $("seed-demo-btn").addEventListener("click", async () => {
 // ----- new patient modal ------------------------------------------------
 
 $("new-patient-btn").addEventListener("click", () => {
+  if (!canManageDirectory()) return;
   populateDoctorSelect();
   $("modal-overlay").hidden = false;
 });
@@ -618,6 +709,7 @@ $("modal-close").addEventListener("click", () => {
   $("modal-overlay").hidden = true;
 });
 $("np-save").addEventListener("click", async () => {
+  if (!canManageDirectory()) return;
   const body = {
     name: $("np-name").value,
     contact_number: $("np-phone").value,
@@ -655,9 +747,13 @@ $("np-save").addEventListener("click", async () => {
 
 // ----- doctor modal -----------------------------------------------------
 
-$("new-doctor-btn").addEventListener("click", () => { $("modal-doctor").hidden = false; });
+$("new-doctor-btn").addEventListener("click", () => {
+  if (!canManageDirectory()) return;
+  $("modal-doctor").hidden = false;
+});
 $("modal-doctor-close").addEventListener("click", () => { $("modal-doctor").hidden = true; });
 $("nd-save").addEventListener("click", async () => {
+  if (!canManageDirectory()) return;
   const name = $("nd-name").value.trim();
   const phone = $("nd-phone").value.trim();
   const specialty = $("nd-specialty").value.trim();
@@ -680,12 +776,14 @@ $("nd-save").addEventListener("click", async () => {
 // ----- family modal -----------------------------------------------------
 
 $("add-family-btn").addEventListener("click", () => {
+  if (!canManageDirectory()) return;
   if (!activePatient) { alert("Select a patient first."); return; }
   $("modal-family").hidden = false;
 });
 $("modal-family-close").addEventListener("click", () => { $("modal-family").hidden = true; });
 $("nf-save").addEventListener("click", async () => {
   if (!activePatient) return;
+  if (!canManageDirectory()) return;
   const name = $("nf-name").value.trim();
   const phone = $("nf-phone").value.trim();
   const relationship = $("nf-relationship").value.trim();
@@ -707,6 +805,7 @@ $("nf-save").addEventListener("click", async () => {
 // ----- assign doctor modal ----------------------------------------------
 
 $("change-doctor-btn").addEventListener("click", () => {
+  if (!canManageDirectory()) return;
   if (!activePatient) { alert("Select a patient first."); return; }
   const sel = $("assign-doctor-select");
   sel.innerHTML = `<option value="">— none —</option>`;
@@ -724,6 +823,7 @@ $("modal-assign-doctor-close").addEventListener("click", () => {
 });
 $("assign-doctor-save").addEventListener("click", async () => {
   if (!activePatient) return;
+  if (!canManageDirectory()) return;
   const doctorId = $("assign-doctor-select").value || null;
   activePatient = await api.patch(`/patients/${activePatient.id}/doctor`, { doctor_id: doctorId });
   $("modal-assign-doctor").hidden = true;
@@ -734,6 +834,7 @@ $("assign-doctor-save").addEventListener("click", async () => {
 
 $("delete-patient-btn").addEventListener("click", async () => {
   if (!activePatient) return;
+  if (!canManageDirectory()) return;
   if (!confirm(`Delete ${activePatient.name}? This cannot be undone.`)) return;
   await api.delete(`/patients/${activePatient.id}`);
   activePatient = null;
@@ -750,6 +851,7 @@ $("delete-patient-btn").addEventListener("click", async () => {
 
 $("logout-btn").addEventListener("click", () => {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
   window.location.replace("/login");
 });
 
@@ -781,7 +883,11 @@ function escapeHtml(str) {
 
 // ----- boot -------------------------------------------------------------
 
-if (hasSession) {
-  refreshPatients();
-  refreshDoctors();
+async function boot() {
+  if (!hasSession) return;
+  const loaded = await loadSession();
+  if (!loaded) return;
+  await Promise.all([refreshPatients(), refreshDoctors()]);
 }
+
+boot();

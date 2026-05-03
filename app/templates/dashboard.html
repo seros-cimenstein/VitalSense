@@ -27,6 +27,10 @@
       </div>
     </div>
     <div class="topbar-right">
+      <div class="session-pill" title="Current account">
+        <span id="session-role">role</span>
+        <strong id="session-name">loading</strong>
+      </div>
       <div class="topbar-status">
         <span class="dot dot-live"></span>
         <span id="status-text">monitoring</span>
@@ -140,7 +144,7 @@
         <section class="card">
           <header class="simulator-head">
             <h2 class="section-title">Connected contacts</h2>
-            <div style="display:flex;gap:8px">
+            <div id="contact-actions" style="display:flex;gap:8px">
               <button id="change-doctor-btn" class="btn-ghost">change doctor</button>
               <button id="add-family-btn" class="btn-ghost">+ add family</button>
             </div>
@@ -189,7 +193,7 @@
         </section>
 
         <!-- Telemetry simulator -->
-        <section class="card simulator">
+        <section class="card simulator" id="simulator-card">
           <header class="simulator-head">
             <h2 class="section-title">Wearable simulator</h2>
             <span class="simulator-badge">Adapter: SimulatedBLEWatch</span>

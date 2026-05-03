@@ -79,6 +79,15 @@ uvicorn app.main:app --reload
 # open http://localhost:8000
 ```
 
+Default demo logins:
+
+| Role | Username | Password | Access |
+|---|---|---|---|
+| Admin | `admin` | `admin` | Full patient, doctor, family, threshold, and demo controls |
+| Patient | `patient` | `patient` | Linked patient view, verification, telemetry demo, SOS |
+| Doctor | `doctor` | `doctor` | Assigned patient monitoring, threshold tuning, SOS |
+| Relative | `relative` | `relative` | Read-only linked patient monitoring |
+
 ## Firebase setup (optional)
 
 The project runs out-of-the-box with an in-memory store. To use real Firestore:

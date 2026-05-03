@@ -6,7 +6,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import reset_graph
-from app.auth import create_access_token
+from app.auth import DEMO_PATIENT_ID, create_access_token
 from app.db.repository import reset_repository
 from app.main import app
 
@@ -52,6 +52,23 @@ async def create_patient(client: AsyncClient, **overrides) -> str:
     return response.json()["id"]
 
 
+async def login_as(username: str, password: str) -> dict:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as public_client:
+        response = await public_client.post(
+            "/api/auth/login",
+            data={"username": username, "password": password},
+        )
+    assert response.status_code == 200
+    return response.json()
+
+
+def headers_for(token_response: dict) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token_response['access_token']}"}
+
+
 @pytest.mark.asyncio
 async def test_health_endpoint(client):
     r = await client.get("/health")
@@ -80,6 +97,7 @@ async def test_auth_login_flow():
             data={"username": "admin", "password": "admin"},
         )
         assert login.status_code == 200
+        assert login.json()["role"] == "admin"
         token = login.json()["access_token"]
 
         allowed = await public_client.get(
@@ -88,6 +106,108 @@ async def test_auth_login_flow():
         )
         assert allowed.status_code == 200
         assert allowed.json() == []
+
+
+@pytest.mark.asyncio
+async def test_role_logins_return_scoped_profiles():
+    expected = {
+        "admin": {"password": "admin", "role": "admin", "patient_id": None},
+        "patient": {"password": "patient", "role": "patient", "patient_id": DEMO_PATIENT_ID},
+        "doctor": {"password": "doctor", "role": "doctor", "patient_id": None},
+        "relative": {"password": "relative", "role": "family", "patient_id": DEMO_PATIENT_ID},
+    }
+
+    for username, details in expected.items():
+        auth = await login_as(username, details["password"])
+        assert auth["username"] == username
+        assert auth["role"] == details["role"]
+        assert auth["patient_id"] == details["patient_id"]
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+            headers=headers_for(auth),
+        ) as scoped_client:
+            me = await scoped_client.get("/api/auth/me")
+            assert me.status_code == 200
+            assert me.json()["role"] == details["role"]
+
+
+@pytest.mark.asyncio
+async def test_patient_login_sees_only_linked_demo_patient():
+    patient_auth = await login_as("patient", "patient")
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+        headers=headers_for(patient_auth),
+    ) as patient_client:
+        seeded = await patient_client.post("/api/demo/seed")
+        assert seeded.status_code == 201
+
+        patients = await patient_client.get("/api/patients")
+        assert patients.status_code == 200
+        assert [p["id"] for p in patients.json()] == [DEMO_PATIENT_ID]
+
+        denied = await patient_client.post("/api/patients", json={
+            "name": "Private",
+            "contact_number": "+90-555-1212",
+            "age": 44,
+            "height_cm": 170,
+            "weight_kg": 70,
+        })
+        assert denied.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_doctor_login_can_tune_assigned_patient_only():
+    doctor_auth = await login_as("doctor", "doctor")
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+        headers=headers_for(doctor_auth),
+    ) as doctor_client:
+        seeded = await doctor_client.post("/api/demo/seed")
+        assert seeded.status_code == 201
+
+        r = await doctor_client.put(f"/api/patients/{DEMO_PATIENT_ID}/thresholds", json={
+            "heart_rate_min": 58,
+            "heart_rate_max": 118,
+            "temperature_min": 36.0,
+            "temperature_max": 38.3,
+        })
+        assert r.status_code == 200
+        assert r.json()["thresholds"]["heart_rate_min"] == 58
+
+        denied = await doctor_client.post("/api/doctors", json={
+            "name": "Dr. Other",
+            "contact_number": "+90-555-3333",
+            "specialty": "Neurology",
+        })
+        assert denied.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_relative_login_is_read_only_for_linked_patient():
+    relative_auth = await login_as("relative", "relative")
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+        headers=headers_for(relative_auth),
+    ) as relative_client:
+        seeded = await relative_client.post("/api/demo/seed")
+        assert seeded.status_code == 201
+
+        status_response = await relative_client.get(f"/api/patients/{DEMO_PATIENT_ID}/status")
+        assert status_response.status_code == 200
+
+        telemetry = await relative_client.post(f"/api/telemetry/{DEMO_PATIENT_ID}", json={
+            "heart_rate": 80,
+            "body_temperature": 36.7,
+        })
+        assert telemetry.status_code == 403
+
+        verify = await relative_client.post(f"/api/verify/{DEMO_PATIENT_ID}")
+        assert verify.status_code == 403
 
 
 @pytest.mark.asyncio

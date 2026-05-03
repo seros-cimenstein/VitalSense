@@ -8,7 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_engine, get_repo, get_sos
-from app.auth import require_auth
+from app.auth import (
+    DEMO_DOCTOR_ID,
+    DEMO_FAMILY_ID,
+    DEMO_PATIENT_ID,
+    AuthRole,
+    AuthenticatedUser,
+    require_auth,
+)
 from app.core import AnomalyDetectionEngine, BreachReason
 from app.db import Repository
 from app.models import (
@@ -27,8 +34,69 @@ from app.services import SOSService
 router = APIRouter(
     prefix="/api",
     tags=["vitalsense"],
-    dependencies=[Depends(require_auth)],
 )
+
+
+def _forbid(detail: str = "Not allowed for this account") -> None:
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+def _require_admin(principal: AuthenticatedUser) -> None:
+    if principal.role != AuthRole.ADMIN:
+        _forbid("Admin access required")
+
+
+def _require_any_role(principal: AuthenticatedUser, *roles: AuthRole) -> None:
+    if principal.role not in roles:
+        _forbid("Insufficient role for this action")
+
+
+def _can_access_patient(principal: AuthenticatedUser, patient: Patient) -> bool:
+    if principal.role == AuthRole.ADMIN:
+        return True
+    if principal.role in {AuthRole.PATIENT, AuthRole.FAMILY}:
+        return principal.patient_id == patient.id
+    if principal.role == AuthRole.DOCTOR:
+        return principal.doctor_id is not None and principal.doctor_id == patient.doctor_id
+    return False
+
+
+def _accessible_patient(
+    patient_id: str,
+    repo: Repository,
+    principal: AuthenticatedUser,
+) -> Patient:
+    patient = repo.get_patient(patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="patient not found")
+    if not _can_access_patient(principal, patient):
+        _forbid("This account cannot access that patient")
+    return patient
+
+
+def _visible_patients(repo: Repository, principal: AuthenticatedUser) -> List[Patient]:
+    return [p for p in repo.list_patients() if _can_access_patient(principal, p)]
+
+
+def _can_access_doctor(
+    principal: AuthenticatedUser,
+    doctor_id: str,
+    repo: Repository,
+) -> bool:
+    if principal.role == AuthRole.ADMIN:
+        return True
+    if principal.role == AuthRole.DOCTOR:
+        return principal.doctor_id == doctor_id
+    if principal.role in {AuthRole.PATIENT, AuthRole.FAMILY} and principal.patient_id:
+        patient = repo.get_patient(principal.patient_id)
+        return patient is not None and patient.doctor_id == doctor_id
+    return False
+
+
+def _visible_doctors(repo: Repository, principal: AuthenticatedUser) -> List[Doctor]:
+    if principal.role == AuthRole.ADMIN:
+        return repo.list_doctors()
+    return [d for d in repo.list_doctors() if _can_access_doctor(principal, d.id, repo)]
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +156,12 @@ class PatientStatus(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/patients", response_model=Patient, status_code=status.HTTP_201_CREATED)
-async def create_patient(body: CreatePatientRequest, repo: Repository = Depends(get_repo)) -> Patient:
+async def create_patient(
+    body: CreatePatientRequest,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> Patient:
+    _require_admin(principal)
     patient = Patient(
         name=body.name,
         contact_number=body.contact_number,
@@ -102,10 +175,14 @@ async def create_patient(body: CreatePatientRequest, repo: Repository = Depends(
 
 
 @router.post("/demo/seed", response_model=Patient, status_code=status.HTTP_201_CREATED)
-async def seed_demo(repo: Repository = Depends(get_repo)) -> Patient:
+async def seed_demo(
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> Patient:
     """Create a complete patient/doctor/family scenario for dashboard demos."""
     doctor = repo.save_doctor(
         Doctor(
+            id=DEMO_DOCTOR_ID,
             name="Dr. Elif Demir",
             contact_number="+90-555-0100",
             location="Istanbul",
@@ -115,6 +192,7 @@ async def seed_demo(repo: Repository = Depends(get_repo)) -> Patient:
     )
     patient = repo.save_patient(
         Patient(
+            id=DEMO_PATIENT_ID,
             name="Ahmet Yilmaz",
             contact_number="+90-555-0200",
             location="Kadikoy, Istanbul",
@@ -132,6 +210,7 @@ async def seed_demo(repo: Repository = Depends(get_repo)) -> Patient:
     )
     repo.save_family_member(
         FamilyMember(
+            id=DEMO_FAMILY_ID,
             name="Mina Yilmaz",
             contact_number="+90-555-0300",
             relationship="daughter",
@@ -139,43 +218,48 @@ async def seed_demo(repo: Repository = Depends(get_repo)) -> Patient:
             location="Istanbul",
         )
     )
-    for heart_rate, body_temperature, daily_steps in [
-        (76, 36.6, 1240),
-        (82, 36.7, 1308),
-        (94, 36.8, 1416),
-        (108, 37.0, 1534),
-        (128, 37.4, 1602),
-    ]:
-        repo.append_record(
-            HealthRecord(
+    if not repo.recent_records(patient.id, limit=1):
+        for heart_rate, body_temperature, daily_steps in [
+            (76, 36.6, 1240),
+            (82, 36.7, 1308),
+            (94, 36.8, 1416),
+            (108, 37.0, 1534),
+            (128, 37.4, 1602),
+        ]:
+            repo.append_record(
+                HealthRecord(
+                    patient_id=patient.id,
+                    heart_rate=heart_rate,
+                    body_temperature=body_temperature,
+                    daily_steps=daily_steps,
+                )
+            )
+        repo.append_event(
+            Event(
                 patient_id=patient.id,
-                heart_rate=heart_rate,
-                body_temperature=body_temperature,
-                daily_steps=daily_steps,
+                type=EventType.THRESHOLD_BREACH,
+                message="Demo breach: HR=128 BPM (allowed 55-120)",
+                metadata={"heart_rate": 128, "body_temperature": 37.4},
             )
         )
-    repo.append_event(
-        Event(
-            patient_id=patient.id,
-            type=EventType.THRESHOLD_BREACH,
-            message="Demo breach: HR=128 BPM (allowed 55-120)",
-            metadata={"heart_rate": 128, "body_temperature": 37.4},
-        )
-    )
     return patient
 
 
 @router.get("/patients", response_model=List[Patient])
-async def list_patients(repo: Repository = Depends(get_repo)) -> List[Patient]:
-    return repo.list_patients()
+async def list_patients(
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> List[Patient]:
+    return _visible_patients(repo, principal)
 
 
 @router.get("/patients/{patient_id}", response_model=Patient)
-async def get_patient(patient_id: str, repo: Repository = Depends(get_repo)) -> Patient:
-    patient = repo.get_patient(patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="patient not found")
-    return patient
+async def get_patient(
+    patient_id: str,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> Patient:
+    return _accessible_patient(patient_id, repo, principal)
 
 
 @router.get("/patients/{patient_id}/status", response_model=PatientStatus)
@@ -183,10 +267,9 @@ async def get_patient_status(
     patient_id: str,
     repo: Repository = Depends(get_repo),
     engine: AnomalyDetectionEngine = Depends(get_engine),
+    principal: AuthenticatedUser = Depends(require_auth),
 ) -> PatientStatus:
-    patient = repo.get_patient(patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="patient not found")
+    patient = _accessible_patient(patient_id, repo, principal)
 
     records = repo.recent_records(patient_id, limit=20)
     events = repo.recent_events(patient_id, limit=50)
@@ -269,7 +352,12 @@ async def get_patient_status(
 
 
 @router.delete("/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_patient(patient_id: str, repo: Repository = Depends(get_repo)):
+async def delete_patient(
+    patient_id: str,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+):
+    _require_admin(principal)
     if not repo.delete_patient(patient_id):
         raise HTTPException(status_code=404, detail="patient not found")
 
@@ -279,10 +367,10 @@ async def update_thresholds(
     patient_id: str,
     thresholds: PersonalizedThresholds,
     repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
 ) -> Patient:
-    patient = repo.get_patient(patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="patient not found")
+    _require_any_role(principal, AuthRole.ADMIN, AuthRole.DOCTOR)
+    patient = _accessible_patient(patient_id, repo, principal)
     patient.thresholds = thresholds
     return repo.save_patient(patient)
 
@@ -292,7 +380,12 @@ async def update_thresholds(
 # ---------------------------------------------------------------------------
 
 @router.post("/doctors", response_model=Doctor, status_code=status.HTTP_201_CREATED)
-async def create_doctor(body: CreateDoctorRequest, repo: Repository = Depends(get_repo)) -> Doctor:
+async def create_doctor(
+    body: CreateDoctorRequest,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> Doctor:
+    _require_admin(principal)
     doctor = Doctor(
         name=body.name,
         contact_number=body.contact_number,
@@ -304,20 +397,34 @@ async def create_doctor(body: CreateDoctorRequest, repo: Repository = Depends(ge
 
 
 @router.get("/doctors", response_model=List[Doctor])
-async def list_doctors(repo: Repository = Depends(get_repo)) -> List[Doctor]:
-    return repo.list_doctors()
+async def list_doctors(
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> List[Doctor]:
+    return _visible_doctors(repo, principal)
 
 
 @router.get("/doctors/{doctor_id}", response_model=Doctor)
-async def get_doctor(doctor_id: str, repo: Repository = Depends(get_repo)) -> Doctor:
+async def get_doctor(
+    doctor_id: str,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> Doctor:
     doctor = repo.get_doctor(doctor_id)
     if doctor is None:
         raise HTTPException(status_code=404, detail="doctor not found")
+    if not _can_access_doctor(principal, doctor_id, repo):
+        _forbid("This account cannot access that doctor")
     return doctor
 
 
 @router.get("/family/{patient_id}", response_model=List[FamilyMember])
-async def list_family(patient_id: str, repo: Repository = Depends(get_repo)) -> List[FamilyMember]:
+async def list_family(
+    patient_id: str,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> List[FamilyMember]:
+    _accessible_patient(patient_id, repo, principal)
     return repo.list_family_for_patient(patient_id)
 
 
@@ -330,7 +437,9 @@ async def assign_doctor(
     patient_id: str,
     body: AssignDoctorRequest,
     repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
 ) -> Patient:
+    _require_admin(principal)
     patient = repo.get_patient(patient_id)
     if patient is None:
         raise HTTPException(status_code=404, detail="patient not found")
@@ -339,21 +448,34 @@ async def assign_doctor(
 
 
 @router.delete("/doctors/{doctor_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_doctor(doctor_id: str, repo: Repository = Depends(get_repo)):
+async def delete_doctor(
+    doctor_id: str,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+):
+    _require_admin(principal)
     if not repo.delete_doctor(doctor_id):
         raise HTTPException(status_code=404, detail="doctor not found")
 
 
 @router.delete("/family/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_family_member(member_id: str, repo: Repository = Depends(get_repo)):
+async def delete_family_member(
+    member_id: str,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+):
+    _require_admin(principal)
     if not repo.delete_family_member(member_id):
         raise HTTPException(status_code=404, detail="family member not found")
 
 
 @router.post("/family", response_model=FamilyMember, status_code=status.HTTP_201_CREATED)
 async def create_family_member(
-    body: CreateFamilyRequest, repo: Repository = Depends(get_repo)
+    body: CreateFamilyRequest,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
 ) -> FamilyMember:
+    _require_admin(principal)
     if repo.get_patient(body.patient_id) is None:
         raise HTTPException(status_code=404, detail="patient not found")
     member = FamilyMember(
@@ -374,8 +496,12 @@ async def create_family_member(
 async def push_telemetry(
     patient_id: str,
     body: TelemetryRequest,
+    repo: Repository = Depends(get_repo),
     engine: AnomalyDetectionEngine = Depends(get_engine),
+    principal: AuthenticatedUser = Depends(require_auth),
 ):
+    _require_any_role(principal, AuthRole.ADMIN, AuthRole.DOCTOR, AuthRole.PATIENT)
+    _accessible_patient(patient_id, repo, principal)
     record = HealthRecord(
         patient_id=patient_id,
         heart_rate=body.heart_rate,
@@ -396,7 +522,14 @@ async def push_telemetry(
 
 
 @router.post("/verify/{patient_id}")
-async def verify(patient_id: str, engine: AnomalyDetectionEngine = Depends(get_engine)):
+async def verify(
+    patient_id: str,
+    repo: Repository = Depends(get_repo),
+    engine: AnomalyDetectionEngine = Depends(get_engine),
+    principal: AuthenticatedUser = Depends(require_auth),
+):
+    _require_any_role(principal, AuthRole.ADMIN, AuthRole.PATIENT)
+    _accessible_patient(patient_id, repo, principal)
     confirmed = engine.confirm_verification(patient_id)
     return {"confirmed": confirmed}
 
@@ -406,10 +539,10 @@ async def force_sos(
     patient_id: str,
     repo: Repository = Depends(get_repo),
     sos: SOSService = Depends(get_sos),
+    principal: AuthenticatedUser = Depends(require_auth),
 ) -> HealthSnapshot:
-    patient = repo.get_patient(patient_id)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="patient not found")
+    _require_any_role(principal, AuthRole.ADMIN, AuthRole.DOCTOR, AuthRole.PATIENT)
+    patient = _accessible_patient(patient_id, repo, principal)
 
     latest = repo.recent_records(patient_id, limit=1)
     if latest:
@@ -432,7 +565,13 @@ async def force_sos(
 
 
 @router.get("/snapshot/{patient_id}", response_model=HealthSnapshot)
-async def get_snapshot(patient_id: str, sos: SOSService = Depends(get_sos)) -> HealthSnapshot:
+async def get_snapshot(
+    patient_id: str,
+    repo: Repository = Depends(get_repo),
+    sos: SOSService = Depends(get_sos),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> HealthSnapshot:
+    _accessible_patient(patient_id, repo, principal)
     snap = sos.fetch_snapshot(patient_id)
     if snap is None:
         raise HTTPException(status_code=404, detail="patient not found")
@@ -441,13 +580,21 @@ async def get_snapshot(patient_id: str, sos: SOSService = Depends(get_sos)) -> H
 
 @router.get("/events/{patient_id}", response_model=List[Event])
 async def list_events(
-    patient_id: str, limit: int = 50, repo: Repository = Depends(get_repo)
+    patient_id: str,
+    limit: int = 50,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
 ) -> List[Event]:
+    _accessible_patient(patient_id, repo, principal)
     return repo.recent_events(patient_id, limit=limit)
 
 
 @router.get("/records/{patient_id}", response_model=List[HealthRecord])
 async def list_records(
-    patient_id: str, limit: int = 20, repo: Repository = Depends(get_repo)
+    patient_id: str,
+    limit: int = 20,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
 ) -> List[HealthRecord]:
+    _accessible_patient(patient_id, repo, principal)
     return repo.recent_records(patient_id, limit=limit)
