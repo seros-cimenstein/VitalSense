@@ -8,7 +8,7 @@ initiate_emergency_protocol, which:
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 from app.db import Repository
 from app.models import (
@@ -26,10 +26,12 @@ class SOSService:
         repo: Repository,
         notification_service: NotificationService,
         snapshot_base_url: str = "https://vitalsense.example/snapshot",
+        snapshot_link_factory: Optional[Callable[[str], str]] = None,
     ):
         self._repo = repo
         self._notify = notification_service
         self._snapshot_base_url = snapshot_base_url
+        self._snapshot_link_factory = snapshot_link_factory
 
     def initiate_emergency_protocol(self, patient: Patient, reason) -> HealthSnapshot:
         """Run the full SOS flow. Returns the snapshot that was shared."""
@@ -96,7 +98,11 @@ class SOSService:
         if doctor is None or not doctor.on_call_status:
             return
 
-        snapshot_url = f"{self._snapshot_base_url}/{patient.id}"
+        snapshot_url = (
+            self._snapshot_link_factory(patient.id)
+            if self._snapshot_link_factory
+            else f"{self._snapshot_base_url}/{patient.id}"
+        )
         delivered = self._notify.send_doctor_alert(
             contact=doctor.contact_number,
             patient_name=patient.name,

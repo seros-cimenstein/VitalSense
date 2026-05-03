@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.core.anomaly_engine import BreachReason
 from app.models import EventType, HealthRecord
+from app.services import NotificationService, SOSService
 
 
 def test_sos_protocol_notifies_family_and_doctor(sos, repo, patient, notifier):
@@ -46,6 +47,26 @@ def test_sos_skips_doctor_when_off_call(sos, repo, patient, doctor, notifier):
     types = [e.type for e in repo.recent_events(patient.id)]
     assert EventType.FAMILY_NOTIFIED in types
     assert EventType.DOCTOR_NOTIFIED not in types
+
+
+def test_sos_uses_snapshot_link_factory(repo, patient, notifier):
+    sos = SOSService(
+        repo,
+        NotificationService(notifier),
+        snapshot_link_factory=lambda patient_id: f"https://example.test/doctor/{patient_id}?token=abc",
+    )
+    reason = BreachReason(True, False, "HR=130 BPM")
+
+    sos.initiate_emergency_protocol(patient, reason)
+
+    doctor_event = next(
+        e for e in repo.recent_events(patient.id)
+        if e.type == EventType.DOCTOR_NOTIFIED
+    )
+    expected = f"https://example.test/doctor/{patient.id}?token=abc"
+    assert doctor_event.metadata["snapshot_url"] == expected
+    doctor_msg = next(m for c, m in notifier.sent if c == "+90-555-0100")
+    assert expected in doctor_msg
 
 
 def test_fetch_snapshot_returns_none_for_unknown_patient(sos):

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VitalSense Doctor Snapshot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/dashboard.css" />
+</head>
+<body class="shared-snapshot-page">
+  <div class="grain"></div>
+  <main class="snapshot-shell">
+    <header class="snapshot-hero">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <path d="M2 14 L8 14 L10 9 L14 19 L17 11 L19 14 L26 14"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">VitalSense</span>
+          <span class="brand-sub">doctor handoff</span>
+        </div>
+      </div>
+      <div class="topbar-status">
+        <span class="dot dot-live"></span>
+        <span id="snapshot-state">loading</span>
+      </div>
+    </header>
+
+    <section class="card snapshot-share-card" id="snapshot-root">
+      <header class="patient-header">
+        <div>
+          <h1 id="patient-name">Loading snapshot</h1>
+          <p id="patient-meta" class="patient-meta">Secure emergency handoff</p>
+        </div>
+        <div class="patient-bmi">
+          <span class="metric-label">Generated</span>
+          <span id="snapshot-time" class="metric-value-mono">--</span>
+        </div>
+      </header>
+
+      <section class="risk-panel risk-critical">
+        <div>
+          <span class="metric-label">Snapshot reason</span>
+          <p id="snapshot-reason">Waiting for authorized snapshot data.</p>
+        </div>
+      </section>
+
+      <div class="vitals-grid">
+        <article class="vital-card">
+          <span class="metric-label">Heart rate</span>
+          <div class="vital-readout">
+            <span id="latest-hr" class="vital-number">--</span>
+            <span class="vital-unit">bpm</span>
+          </div>
+          <div id="hr-range" class="vital-range">range --</div>
+        </article>
+        <article class="vital-card">
+          <span class="metric-label">Body temperature</span>
+          <div class="vital-readout">
+            <span id="latest-temp" class="vital-number">--</span>
+            <span class="vital-unit">C</span>
+          </div>
+          <div id="temp-range" class="vital-range">range --</div>
+        </article>
+        <article class="vital-card">
+          <span class="metric-label">Daily steps</span>
+          <div class="vital-readout">
+            <span id="latest-steps" class="vital-number">--</span>
+            <span class="vital-unit">steps</span>
+          </div>
+          <div class="vital-range">latest reading</div>
+        </article>
+      </div>
+
+      <section class="snapshot-grid">
+        <div>
+          <span class="metric-label">Recent telemetry</span>
+          <div id="snapshot-records" class="snapshot-records"></div>
+        </div>
+        <div class="snapshot-stat">
+          <span class="metric-label">Patient contact</span>
+          <span id="patient-contact" class="metric-value-mono">--</span>
+          <p id="patient-location" class="hint"></p>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const patientId = {{ patient_id | tojson }};
+    const token = {{ token | tojson }};
+
+    const setText = (id, value) => {
+      document.getElementById(id).textContent = value;
+    };
+
+    function fmtTime(value) {
+      return value ? new Date(value).toLocaleString() : "--";
+    }
+
+    function renderRecords(records) {
+      const list = document.getElementById("snapshot-records");
+      list.innerHTML = "";
+      if (!records.length) {
+        list.innerHTML = '<p class="hint">No telemetry records yet.</p>';
+        return;
+      }
+      for (const record of records.slice(0, 8)) {
+        const item = document.createElement("div");
+        item.className = "snapshot-record";
+        item.innerHTML = `
+          <span>${fmtTime(record.timestamp)}</span>
+          <strong>${record.heart_rate} bpm</strong>
+          <strong>${Number(record.body_temperature).toFixed(1)} C</strong>
+          <span>${record.daily_steps} steps</span>
+        `;
+        list.appendChild(item);
+      }
+    }
+
+    async function loadSnapshot() {
+      if (!token) {
+        throw new Error("missing token");
+      }
+      const response = await fetch(
+        `/api/snapshot/${encodeURIComponent(patientId)}/shared?token=${encodeURIComponent(token)}`
+      );
+      if (!response.ok) {
+        throw new Error(response.status === 401 ? "unauthorized" : "snapshot unavailable");
+      }
+      return response.json();
+    }
+
+    loadSnapshot()
+      .then((snapshot) => {
+        const patient = snapshot.patient;
+        const thresholds = patient.thresholds;
+        const latest = snapshot.recent_records[0] || null;
+
+        setText("snapshot-state", "authorized");
+        setText("patient-name", patient.name);
+        setText("patient-meta", `${patient.age}y | ${patient.height_cm}cm | ${patient.weight_kg}kg`);
+        setText("snapshot-time", fmtTime(snapshot.triggered_at));
+        setText("snapshot-reason", snapshot.reason);
+        setText("patient-contact", patient.contact_number);
+        setText("patient-location", patient.location || "");
+        setText("hr-range", `range ${thresholds.heart_rate_min}-${thresholds.heart_rate_max} bpm`);
+        setText("temp-range", `range ${thresholds.temperature_min}-${thresholds.temperature_max} C`);
+
+        if (latest) {
+          setText("latest-hr", latest.heart_rate);
+          setText("latest-temp", Number(latest.body_temperature).toFixed(1));
+          setText("latest-steps", latest.daily_steps);
+        }
+        renderRecords(snapshot.recent_records);
+      })
+      .catch((error) => {
+        setText("snapshot-state", "blocked");
+        setText("patient-name", "Snapshot unavailable");
+        setText("patient-meta", "The link is invalid, expired, or the patient record is unavailable.");
+        setText("snapshot-reason", error.message);
+        renderRecords([]);
+      });
+  </script>
+</body>
+</html>

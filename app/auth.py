@@ -24,6 +24,7 @@ from pydantic import BaseModel
 SECRET_KEY = os.getenv("VITALSENSE_SECRET_KEY", "vitalsense-dev-secret-change-in-prod")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 8 * 60
+SNAPSHOT_TOKEN_EXPIRE_MINUTES = 2 * 60
 
 _pwd = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -168,6 +169,32 @@ def create_access_token(
         "exp": expire,
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_snapshot_access_token(
+    patient_id: str,
+    expires_delta: Optional[timedelta] = None,
+) -> str:
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(minutes=SNAPSHOT_TOKEN_EXPIRE_MINUTES)
+    )
+    payload = {
+        "sub": patient_id,
+        "scope": "doctor_snapshot",
+        "exp": expire,
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_snapshot_access_token(token: str, patient_id: str) -> bool:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return (
+            payload.get("scope") == "doctor_snapshot"
+            and payload.get("sub") == patient_id
+        )
+    except JWTError:
+        return False
 
 
 async def require_auth(token: str = Depends(oauth2_scheme)) -> AuthenticatedUser:

@@ -21,7 +21,7 @@ VitalSense is a real-time health monitoring system that bridges wearable telemet
 
 - **Event-driven core** — telemetry streams flow into the `AnomalyDetectionEngine`, which routes critical events to the `SOSService`.
 - **Layered profile management** — users, doctors, family, and threshold configuration go through a standard service/repository layer.
-- **Adapter pattern for wearables** — Apple, Samsung, and simulated BLE watches are normalized behind the `StandardWearable` interface, so the engine never touches vendor-specific SDKs.
+- **Adapter pattern for wearables** — Apple, Samsung, simulated BLE watches, and external device bridge payloads are normalized before reaching the anomaly engine.
 - **SQLite** for default persistence, with optional Firebase Firestore and in-memory backends.
 - **FastAPI** REST API + a minimal HTML/JS dashboard.
 
@@ -110,6 +110,20 @@ The dashboard also has an `export` button on each patient profile. It downloads
 a JSON bundle containing the patient profile, assigned doctor, relatives, recent
 telemetry records, and recent events.
 
+Doctor SOS notifications include a signed patient snapshot link. Set this in
+production if the app is deployed somewhere else:
+
+```bash
+export VITALSENSE_SNAPSHOT_BASE_URL=https://your-domain.example/doctor/snapshot
+```
+
+External wearable or mobile bridge ingestion uses a device API key. Change the
+default before exposing the bridge beyond a classroom demo:
+
+```bash
+export VITALSENSE_DEVICE_API_KEY=replace-with-a-random-secret
+```
+
 ## Firebase setup (optional)
 
 The project runs out-of-the-box with SQLite. To use real Firestore:
@@ -131,8 +145,10 @@ The project runs out-of-the-box with SQLite. To use real Firestore:
 | `GET`  | `/api/patients/{id}/export` | Export patient profile, contacts, records, and events |
 | `PUT`  | `/api/patients/{id}/thresholds` | Update personalized thresholds |
 | `POST` | `/api/telemetry/{patient_id}` | Push a vitals reading from a wearable |
+| `POST` | `/api/wearable/{patient_id}/telemetry` | Push device telemetry with `X-VitalSense-Device-Key` |
 | `POST` | `/api/verify/{patient_id}` | Patient confirms they're OK |
 | `GET`  | `/api/snapshot/{patient_id}` | Doctor pulls a health snapshot |
+| `GET`  | `/api/snapshot/{patient_id}/shared` | Tokenized snapshot payload for SOS doctor links |
 | `GET`  | `/api/events/{patient_id}` | Recent anomaly/SOS events |
 
 ## Selected design pattern: Adapter
@@ -150,5 +166,8 @@ pytest tests/test_anomaly_engine.py  # single file
 The suite covers: adapter conformance, threshold evaluation, verification timeout, SOS flow, and API routes.
 
 See `docs/DEMO_TOOLS.md` for the full demo/tooling guide.
+
+See `docs/MIDTERM_DELIVERABLES.md` for the midterm report checklist,
+diagram drafts, user stories, and presentation outline.
 
 See `docs/AI_CHAT.md` for the proposed AI health chat integration plan.

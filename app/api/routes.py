@@ -1,10 +1,12 @@
 """HTTP API routes for VitalSense."""
 from __future__ import annotations
 
+import os
+import secrets
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_engine, get_repo, get_sos
@@ -15,6 +17,7 @@ from app.auth import (
     AuthRole,
     AuthenticatedUser,
     require_auth,
+    verify_snapshot_access_token,
 )
 from app.core import AnomalyDetectionEngine, BreachReason
 from app.db import Repository
@@ -39,6 +42,20 @@ router = APIRouter(
 
 def _forbid(detail: str = "Not allowed for this account") -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+def _require_device_key(device_key: Optional[str]) -> None:
+    expected = os.getenv("VITALSENSE_DEVICE_API_KEY", "vitalsense-device-dev-key")
+    if not device_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Device API key required",
+        )
+    if not secrets.compare_digest(device_key, expected):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid device API key",
+        )
 
 
 def _require_admin(principal: AuthenticatedUser) -> None:
@@ -552,6 +569,41 @@ async def push_telemetry(
     }
 
 
+@router.post("/wearable/{patient_id}/telemetry")
+async def push_wearable_telemetry(
+    patient_id: str,
+    body: TelemetryRequest,
+    x_vitalsense_device_key: Optional[str] = Header(
+        None,
+        alias="X-VitalSense-Device-Key",
+    ),
+    repo: Repository = Depends(get_repo),
+    engine: AnomalyDetectionEngine = Depends(get_engine),
+):
+    """Device bridge ingestion for real wearable/mobile gateway integrations."""
+    _require_device_key(x_vitalsense_device_key)
+    if repo.get_patient(patient_id) is None:
+        raise HTTPException(status_code=404, detail="patient not found")
+    record = HealthRecord(
+        patient_id=patient_id,
+        heart_rate=body.heart_rate,
+        body_temperature=body.body_temperature,
+        daily_steps=body.daily_steps,
+    )
+    try:
+        reason = engine.process_record(record)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {
+        "record_id": record.id,
+        "source": "wearable_device_bridge",
+        "breach": reason.any,
+        "detail": reason.detail,
+        "verification_pending": engine.has_pending_verification(patient_id),
+    }
+
+
 @router.post("/verify/{patient_id}")
 async def verify(
     patient_id: str,
@@ -593,6 +645,23 @@ async def force_sos(
             detail="Manual demo escalation from dashboard; no recent telemetry",
         )
     return sos.initiate_emergency_protocol(patient, reason)
+
+
+@router.get("/snapshot/{patient_id}/shared", response_model=HealthSnapshot)
+async def get_shared_snapshot(
+    patient_id: str,
+    token: str = Query(...),
+    sos: SOSService = Depends(get_sos),
+) -> HealthSnapshot:
+    if not verify_snapshot_access_token(token, patient_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired snapshot token",
+        )
+    snap = sos.fetch_snapshot(patient_id)
+    if snap is None:
+        raise HTTPException(status_code=404, detail="patient not found")
+    return snap
 
 
 @router.get("/snapshot/{patient_id}", response_model=HealthSnapshot)

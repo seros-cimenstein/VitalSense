@@ -5,8 +5,8 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.api.deps import reset_graph
-from app.auth import DEMO_PATIENT_ID, create_access_token
+from app.api.deps import get_sos, reset_graph
+from app.auth import DEMO_PATIENT_ID, create_access_token, create_snapshot_access_token
 from app.db.repository import reset_repository
 from app.main import app
 
@@ -330,6 +330,14 @@ async def test_patient_export_contains_linked_data(client):
 
 
 @pytest.mark.asyncio
+async def test_sos_snapshot_base_url_can_be_configured(client, monkeypatch):
+    monkeypatch.setenv("VITALSENSE_SNAPSHOT_BASE_URL", "https://example.test/snapshots")
+    reset_graph()
+    sos = await get_sos()
+    assert sos._snapshot_base_url == "https://example.test/snapshots"
+
+
+@pytest.mark.asyncio
 async def test_telemetry_for_unknown_patient_404(client):
     r = await client.post("/api/telemetry/nope", json={
         "heart_rate": 80,
@@ -361,6 +369,74 @@ async def test_snapshot_endpoint(client):
     assert r.status_code == 200
     assert r.json()["patient"]["id"] == pid
     assert len(r.json()["recent_records"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_shared_snapshot_requires_valid_token(client):
+    pid = await create_patient(client, name="Shared Snap", age=40)
+    await client.post(
+        f"/api/telemetry/{pid}",
+        json={"heart_rate": 82, "body_temperature": 36.8},
+    )
+
+    token = create_snapshot_access_token(pid)
+    wrong_patient_token = create_snapshot_access_token("different-patient")
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as public_client:
+        denied = await public_client.get(
+            f"/api/snapshot/{pid}/shared",
+            params={"token": wrong_patient_token},
+        )
+        assert denied.status_code == 401
+
+        allowed = await public_client.get(
+            f"/api/snapshot/{pid}/shared",
+            params={"token": token},
+        )
+        assert allowed.status_code == 200
+        assert allowed.json()["patient"]["id"] == pid
+
+        page = await public_client.get(f"/doctor/snapshot/{pid}", params={"token": token})
+        assert page.status_code == 200
+        assert "doctor handoff" in page.text
+
+
+@pytest.mark.asyncio
+async def test_wearable_device_ingestion_uses_device_key(client, monkeypatch):
+    monkeypatch.setenv("VITALSENSE_DEVICE_API_KEY", "device-secret")
+    pid = await create_patient(client, name="Device")
+
+    payload = {
+        "heart_rate": 150,
+        "body_temperature": 36.7,
+        "daily_steps": 420,
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as public_client:
+        missing = await public_client.post(f"/api/wearable/{pid}/telemetry", json=payload)
+        assert missing.status_code == 401
+
+        wrong = await public_client.post(
+            f"/api/wearable/{pid}/telemetry",
+            json=payload,
+            headers={"X-VitalSense-Device-Key": "wrong"},
+        )
+        assert wrong.status_code == 403
+
+        ok = await public_client.post(
+            f"/api/wearable/{pid}/telemetry",
+            json=payload,
+            headers={"X-VitalSense-Device-Key": "device-secret"},
+        )
+        assert ok.status_code == 200
+        body = ok.json()
+        assert body["source"] == "wearable_device_bridge"
+        assert body["breach"] is True
+        assert body["verification_pending"] is True
 
 
 @pytest.mark.asyncio

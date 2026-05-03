@@ -82,6 +82,7 @@ class AnomalyDetectionEngine:
         sos_service,  # forward ref — SOSService imported in services
         verification_timeout: float = DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
         timer_factory: Optional[Callable[[float, Callable], "threading.Timer"]] = None,
+        verification_notifier: Optional[Callable[[Patient, BreachReason, float], bool]] = None,
     ):
         self._repo = repo
         self._sos = sos_service
@@ -91,6 +92,7 @@ class AnomalyDetectionEngine:
         self._timer_factory = timer_factory or (
             lambda secs, cb: threading.Timer(secs, cb)
         )
+        self._verification_notifier = verification_notifier
         self._pending: Dict[str, "threading.Timer"] = {}
         self._pending_reasons: Dict[str, BreachReason] = {}
         self._pending_deadlines: Dict[str, datetime] = {}
@@ -160,6 +162,7 @@ class AnomalyDetectionEngine:
                 return
 
             # Send the verification prompt
+            delivered = self._send_verification_prompt(patient, reason)
             self._repo.append_event(
                 Event(
                     patient_id=patient.id,
@@ -168,6 +171,10 @@ class AnomalyDetectionEngine:
                         f"Verification prompt sent — patient has {int(self._timeout)}s "
                         "to confirm they're OK."
                     ),
+                    metadata={
+                        "delivered": delivered,
+                        "contact": patient.contact_number,
+                    },
                 )
             )
 
@@ -181,6 +188,14 @@ class AnomalyDetectionEngine:
             )
             timer.daemon = True  # don't block process exit
             timer.start()
+
+    def _send_verification_prompt(self, patient: Patient, reason: BreachReason) -> bool:
+        if self._verification_notifier is None:
+            return False
+        try:
+            return self._verification_notifier(patient, reason, self._timeout)
+        except Exception:
+            return False
 
     def _on_timeout(self, patient_id: str, reason: BreachReason) -> None:
         """No verification arrived in time — escalate."""

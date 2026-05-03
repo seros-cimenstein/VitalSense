@@ -72,9 +72,13 @@ def test_engine_starts_verification_on_breach(engine, repo, patient):
     engine.process_record(record)
 
     assert engine.has_pending_verification(patient.id) is True
-    types = [e.type for e in repo.recent_events(patient.id)]
+    events = repo.recent_events(patient.id)
+    types = [e.type for e in events]
     assert EventType.THRESHOLD_BREACH in types
     assert EventType.VERIFICATION_SENT in types
+    prompt_event = next(e for e in events if e.type == EventType.VERIFICATION_SENT)
+    assert prompt_event.metadata["delivered"] is True
+    assert prompt_event.metadata["contact"] == patient.contact_number
 
 
 def test_engine_does_not_stack_verifications_for_same_patient(engine, patient, created_timers):

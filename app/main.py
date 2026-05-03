@@ -36,6 +36,15 @@ async def login_page(request: Request):
     return templates.TemplateResponse(request, "login.html")
 
 
+@app.get("/doctor/snapshot/{patient_id}", response_class=HTMLResponse)
+async def shared_doctor_snapshot(request: Request, patient_id: str, token: str = ""):
+    return templates.TemplateResponse(
+        request,
+        "doctor_snapshot.html",
+        {"patient_id": patient_id, "token": token},
+    )
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}

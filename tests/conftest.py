@@ -67,13 +67,29 @@ def created_timers() -> list[ImmediateTimer]:
 
 
 @pytest.fixture
-def engine(repo, sos, created_timers) -> AnomalyDetectionEngine:
+def engine(repo, sos, created_timers, notifier) -> AnomalyDetectionEngine:
     def factory(secs: float, cb):
         t = ImmediateTimer(secs, cb)
         created_timers.append(t)
         return t
 
-    return AnomalyDetectionEngine(repo, sos, verification_timeout=60.0, timer_factory=factory)
+    prompt_service = NotificationService(notifier)
+
+    def verification_prompt(patient, reason, timeout_seconds: float) -> bool:
+        return prompt_service.send_verification_prompt(
+            patient.contact_number,
+            patient.name,
+            reason.detail,
+            int(timeout_seconds),
+        )
+
+    return AnomalyDetectionEngine(
+        repo,
+        sos,
+        verification_timeout=60.0,
+        timer_factory=factory,
+        verification_notifier=verification_prompt,
+    )
 
 
 @pytest.fixture

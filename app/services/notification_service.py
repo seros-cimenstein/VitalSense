@@ -63,6 +63,20 @@ class NotificationService:
         )
         return self._notifier.send(contact, msg)
 
+    def send_verification_prompt(
+        self,
+        contact: str,
+        patient_name: str,
+        detail: str,
+        timeout_seconds: int,
+    ) -> bool:
+        msg = (
+            f"VitalSense CHECK-IN — {patient_name}, unusual vitals were detected "
+            f"({detail}). Please confirm you are OK within {timeout_seconds}s "
+            "to prevent SOS escalation."
+        )
+        return self._notifier.send(contact, msg)
+
     def send_doctor_alert(self, contact: str, patient_name: str, snapshot_url: str) -> bool:
         msg = (
             f"VitalSense URGENT — patient {patient_name} flagged. "
