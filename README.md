@@ -22,6 +22,7 @@ VitalSense is a real-time health monitoring system that bridges wearable telemet
 - **Event-driven core** — telemetry streams flow into the `AnomalyDetectionEngine`, which routes critical events to the `SOSService`.
 - **Layered profile management** — users, doctors, family, and threshold configuration go through a standard service/repository layer.
 - **Adapter pattern for wearables** — Apple, Samsung, simulated BLE watches, and external device bridge payloads are normalized before reaching the anomaly engine.
+- **Clinical handoff context** — each patient can carry conditions, medications, allergies, and care notes into dashboard exports and doctor snapshots.
 - **SQLite** for default persistence, with optional Firebase Firestore and in-memory backends.
 - **FastAPI** REST API + a minimal HTML/JS dashboard.
 
@@ -144,9 +145,11 @@ The project runs out-of-the-box with SQLite. To use real Firestore:
 | `GET`  | `/api/patients/{id}` | Fetch profile + thresholds |
 | `GET`  | `/api/patients/{id}/export` | Export patient profile, contacts, records, and events |
 | `PUT`  | `/api/patients/{id}/thresholds` | Update personalized thresholds |
+| `PUT`  | `/api/patients/{id}/clinical-profile` | Update conditions, medications, allergies, and care notes |
 | `POST` | `/api/telemetry/{patient_id}` | Push a vitals reading from a wearable |
 | `POST` | `/api/wearable/{patient_id}/telemetry` | Push device telemetry with `X-VitalSense-Device-Key` |
 | `POST` | `/api/verify/{patient_id}` | Patient confirms they're OK |
+| `POST` | `/api/sos/{patient_id}/resolve` | Mark an active SOS escalation resolved |
 | `GET`  | `/api/snapshot/{patient_id}` | Doctor pulls a health snapshot |
 | `GET`  | `/api/snapshot/{patient_id}/shared` | Tokenized snapshot payload for SOS doctor links |
 | `GET`  | `/api/events/{patient_id}` | Recent anomaly/SOS events |

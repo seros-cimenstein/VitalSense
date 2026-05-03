@@ -89,6 +89,25 @@
           <p id="patient-location" class="hint"></p>
         </div>
       </section>
+
+      <section class="clinical-profile-grid">
+        <article>
+          <span class="metric-label">Conditions</span>
+          <div id="snapshot-conditions" class="clinical-chip-list"></div>
+        </article>
+        <article>
+          <span class="metric-label">Medications</span>
+          <div id="snapshot-medications" class="clinical-chip-list"></div>
+        </article>
+        <article>
+          <span class="metric-label">Allergies</span>
+          <div id="snapshot-allergies" class="clinical-chip-list"></div>
+        </article>
+        <article>
+          <span class="metric-label">Care notes</span>
+          <p id="snapshot-care-notes" class="clinical-notes">--</p>
+        </article>
+      </section>
     </section>
   </main>
 
@@ -124,6 +143,21 @@
       }
     }
 
+    function renderList(id, values) {
+      const target = document.getElementById(id);
+      target.innerHTML = "";
+      if (!values || !values.length) {
+        target.innerHTML = '<span class="hint">none listed</span>';
+        return;
+      }
+      for (const value of values) {
+        const chip = document.createElement("span");
+        chip.className = "clinical-chip";
+        chip.textContent = value;
+        target.appendChild(chip);
+      }
+    }
+
     async function loadSnapshot() {
       if (!token) {
         throw new Error("missing token");
@@ -152,6 +186,10 @@
         setText("patient-location", patient.location || "");
         setText("hr-range", `range ${thresholds.heart_rate_min}-${thresholds.heart_rate_max} bpm`);
         setText("temp-range", `range ${thresholds.temperature_min}-${thresholds.temperature_max} C`);
+        setText("snapshot-care-notes", patient.care_notes || "--");
+        renderList("snapshot-conditions", patient.conditions);
+        renderList("snapshot-medications", patient.medications);
+        renderList("snapshot-allergies", patient.allergies);
 
         if (latest) {
           setText("latest-hr", latest.heart_rate);
@@ -165,6 +203,9 @@
         setText("patient-name", "Snapshot unavailable");
         setText("patient-meta", "The link is invalid, expired, or the patient record is unavailable.");
         setText("snapshot-reason", error.message);
+        renderList("snapshot-conditions", []);
+        renderList("snapshot-medications", []);
+        renderList("snapshot-allergies", []);
         renderRecords([]);
       });
   </script>

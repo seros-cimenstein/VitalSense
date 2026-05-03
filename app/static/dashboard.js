@@ -118,6 +118,14 @@ function canVerifyPatient() {
   return hasRole("admin", "patient");
 }
 
+function canResolveSos() {
+  return hasRole("admin", "doctor", "patient");
+}
+
+function canEditClinicalProfile() {
+  return hasRole("admin", "doctor");
+}
+
 function roleLabel(role) {
   return {
     admin: "Admin",
@@ -145,12 +153,14 @@ function applyAccessControls() {
   const canTune = canTuneThresholds();
   const canUseTelemetry = canUseTelemetryControls();
   const canVerify = canVerifyPatient();
+  const canEditClinical = canEditClinicalProfile();
 
   $("new-patient-btn").hidden = !canManage;
   $("new-doctor-btn").hidden = !canManage;
   $("delete-patient-btn").hidden = !canManage;
   $("contact-actions").hidden = !canManage;
   $("save-thresholds").hidden = !canTune;
+  $("edit-clinical-btn").hidden = !canEditClinical;
   $("simulator-card").hidden = !canUseTelemetry;
   $("confirm-ok").hidden = !canVerify;
   $("force-sos").hidden = !canUseTelemetry;
@@ -220,6 +230,7 @@ function renderPatient() {
     `range ${p.thresholds.heart_rate_min}–${p.thresholds.heart_rate_max} bpm`;
   $("vital-temp-range").textContent =
     `range ${p.thresholds.temperature_min}–${p.thresholds.temperature_max} °C`;
+  renderClinicalProfile(p);
 }
 
 // ----- timeline + vitals ------------------------------------------------
@@ -299,6 +310,29 @@ function renderRiskStatus(status) {
   $("call-state").textContent = status.call_attempted ? "call: placed" : "call: waiting";
   $("family-state").textContent = `family: ${status.family_notifications_sent}`;
   $("doctor-state").textContent = `doctor: ${status.doctor_notifications_sent}`;
+  $("resolve-sos").hidden = !(status.sos_active && canResolveSos());
+}
+
+function renderClinicalProfile(patient) {
+  renderClinicalList("clinical-conditions", patient.conditions);
+  renderClinicalList("clinical-medications", patient.medications);
+  renderClinicalList("clinical-allergies", patient.allergies);
+  $("clinical-care-notes").textContent = patient.care_notes || "No care notes.";
+}
+
+function renderClinicalList(id, values) {
+  const target = $(id);
+  target.innerHTML = "";
+  if (!values || !values.length) {
+    target.innerHTML = `<span class="hint">none listed</span>`;
+    return;
+  }
+  for (const value of values) {
+    const chip = document.createElement("span");
+    chip.className = "clinical-chip";
+    chip.textContent = value;
+    target.appendChild(chip);
+  }
 }
 
 async function refreshSnapshot() {
@@ -434,7 +468,7 @@ function drawSeries(ctx, records, opts) {
 function eventClass(type) {
   if (["sos_triggered", "threshold_breach", "family_notified", "doctor_notified"].includes(type))
     return "ev-warn";
-  if (type === "verification_confirmed") return "ev-ok";
+  if (["verification_confirmed", "sos_resolved"].includes(type)) return "ev-ok";
   if (type === "call_attempted") return "ev-call";
   return "";
 }
@@ -690,6 +724,15 @@ $("force-sos").addEventListener("click", async () => {
   await refreshTimeline();
 });
 
+$("resolve-sos").addEventListener("click", async () => {
+  if (!activePatient) return;
+  if (!canResolveSos()) return;
+  const note = prompt("Resolution note", "Patient contacted and situation resolved.");
+  if (note === null) return;
+  await api.post(`/sos/${activePatient.id}/resolve`, { note });
+  await refreshTimeline();
+});
+
 $("seed-demo-btn").addEventListener("click", async () => {
   const created = await api.post("/demo/seed");
   if (!created) return;
@@ -830,6 +873,36 @@ $("assign-doctor-save").addEventListener("click", async () => {
   await refreshContacts();
 });
 
+// ----- clinical profile modal -------------------------------------------
+
+$("edit-clinical-btn").addEventListener("click", () => {
+  if (!activePatient) return;
+  if (!canEditClinicalProfile()) return;
+  $("cp-conditions").value = (activePatient.conditions || []).join("\n");
+  $("cp-medications").value = (activePatient.medications || []).join("\n");
+  $("cp-allergies").value = (activePatient.allergies || []).join("\n");
+  $("cp-care-notes").value = activePatient.care_notes || "";
+  $("modal-clinical").hidden = false;
+});
+
+$("modal-clinical-close").addEventListener("click", () => {
+  $("modal-clinical").hidden = true;
+});
+
+$("cp-save").addEventListener("click", async () => {
+  if (!activePatient) return;
+  if (!canEditClinicalProfile()) return;
+  activePatient = await api.put(`/patients/${activePatient.id}/clinical-profile`, {
+    conditions: splitClinicalText($("cp-conditions").value),
+    medications: splitClinicalText($("cp-medications").value),
+    allergies: splitClinicalText($("cp-allergies").value),
+    care_notes: $("cp-care-notes").value.trim() || null,
+  });
+  $("modal-clinical").hidden = true;
+  renderPatient();
+  await refreshTimeline();
+});
+
 // ----- delete patient ---------------------------------------------------
 
 $("delete-patient-btn").addEventListener("click", async () => {
@@ -895,6 +968,19 @@ function escapeHtml(str) {
     '"': "&quot;",
     "'": "&#39;",
   })[c]);
+}
+
+function splitClinicalText(value) {
+  const seen = new Set();
+  return value
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (!item || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 // ----- boot -------------------------------------------------------------

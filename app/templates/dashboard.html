@@ -112,6 +112,7 @@
             <span id="family-state">family: 0</span>
             <span id="doctor-state">doctor: 0</span>
           </div>
+          <button id="resolve-sos" class="btn-confirm" hidden>resolve SOS</button>
         </section>
 
         <div class="vitals-grid">
@@ -151,6 +152,32 @@
             </div>
           </header>
           <div id="contacts-content"><p class="hint">No contacts linked yet.</p></div>
+        </section>
+
+        <!-- Clinical profile -->
+        <section class="card">
+          <header class="simulator-head">
+            <h2 class="section-title">Clinical profile</h2>
+            <button id="edit-clinical-btn" class="btn-ghost">edit profile</button>
+          </header>
+          <div class="clinical-profile-grid">
+            <article>
+              <span class="metric-label">Conditions</span>
+              <div id="clinical-conditions" class="clinical-chip-list"></div>
+            </article>
+            <article>
+              <span class="metric-label">Medications</span>
+              <div id="clinical-medications" class="clinical-chip-list"></div>
+            </article>
+            <article>
+              <span class="metric-label">Allergies</span>
+              <div id="clinical-allergies" class="clinical-chip-list"></div>
+            </article>
+            <article>
+              <span class="metric-label">Care notes</span>
+              <p id="clinical-care-notes" class="clinical-notes">No care notes.</p>
+            </article>
+          </div>
         </section>
 
         <!-- Verification banner -->
@@ -295,6 +322,23 @@
         <select id="assign-doctor-select"><option value="">— none —</option></select>
       </label>
       <button id="assign-doctor-save" class="btn-primary">save</button>
+    </div>
+  </div>
+
+  <!-- Edit clinical profile modal -->
+  <div id="modal-clinical" class="modal-overlay" hidden>
+    <div class="modal">
+      <header class="modal-head">
+        <h2>Clinical profile</h2>
+        <button id="modal-clinical-close" class="btn-ghost">close</button>
+      </header>
+      <div class="modal-grid">
+        <label class="modal-full">Conditions <textarea id="cp-conditions" rows="3" placeholder="One per line or comma separated"></textarea></label>
+        <label class="modal-full">Medications <textarea id="cp-medications" rows="3" placeholder="One per line or comma separated"></textarea></label>
+        <label class="modal-full">Allergies <textarea id="cp-allergies" rows="2" placeholder="One per line or comma separated"></textarea></label>
+        <label class="modal-full">Care notes <textarea id="cp-care-notes" rows="4" placeholder="Emergency context for doctors and relatives"></textarea></label>
+      </div>
+      <button id="cp-save" class="btn-primary">save clinical profile</button>
     </div>
   </div>
 

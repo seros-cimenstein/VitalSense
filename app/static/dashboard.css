@@ -239,6 +239,20 @@ input {
   transition: border-color 0.15s;
 }
 input:focus { border-color: var(--accent); }
+textarea {
+  font-family: "Manrope", system-ui, sans-serif;
+  font-size: 14px;
+  padding: 9px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  outline: none;
+  resize: vertical;
+  min-height: 72px;
+  transition: border-color 0.15s;
+}
+textarea:focus { border-color: var(--accent); }
 
 /* buttons */
 .btn-primary, .btn-ghost, .btn-confirm, .btn-danger {
@@ -362,6 +376,11 @@ input:focus { border-color: var(--accent); }
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 4px 8px;
+}
+#resolve-sos {
+  grid-column: 1 / -1;
+  justify-self: start;
+  width: auto;
 }
 .risk-line {
   display: flex;
@@ -574,6 +593,40 @@ input:focus { border-color: var(--accent); }
   display: grid;
   gap: 6px;
   text-align: left;
+}
+
+.clinical-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 4px;
+}
+.clinical-profile-grid article {
+  min-width: 0;
+  padding: 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.clinical-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 25px;
+  align-items: center;
+}
+.clinical-chip {
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+.clinical-notes {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  white-space: pre-wrap;
 }
 
 /* simulator */
@@ -885,6 +938,9 @@ select:focus { border-color: var(--accent); }
     gap: 10px;
   }
   .snapshot-share-card .snapshot-grid {
+    grid-template-columns: 1fr;
+  }
+  .clinical-profile-grid {
     grid-template-columns: 1fr;
   }
 

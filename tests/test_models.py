@@ -29,6 +29,14 @@ def test_patient_bmi_handles_zero_height():
     assert p.bmi == 0.0
 
 
+def test_patient_clinical_profile_defaults_to_empty():
+    p = Patient(name="Test", contact_number="x", age=30, height_cm=180, weight_kg=81)
+    assert p.conditions == []
+    assert p.medications == []
+    assert p.allergies == []
+    assert p.care_notes is None
+
+
 def test_thresholds_reject_inverted_hr_range():
     with pytest.raises(ValidationError):
         PersonalizedThresholds(heart_rate_min=120, heart_rate_max=60)

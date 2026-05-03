@@ -87,6 +87,10 @@ class Patient(User):
     thresholds: PersonalizedThresholds = Field(default_factory=PersonalizedThresholds)
     doctor_id: Optional[str] = None
     family_member_ids: List[str] = Field(default_factory=list)
+    conditions: List[str] = Field(default_factory=list)
+    medications: List[str] = Field(default_factory=list)
+    allergies: List[str] = Field(default_factory=list)
+    care_notes: Optional[str] = None
 
     @property
     def bmi(self) -> float:
@@ -127,6 +131,7 @@ class EventType(str, Enum):
     VERIFICATION_SENT = "verification_sent"
     VERIFICATION_CONFIRMED = "verification_confirmed"
     SOS_TRIGGERED = "sos_triggered"
+    SOS_RESOLVED = "sos_resolved"
     FAMILY_NOTIFIED = "family_notified"
     DOCTOR_NOTIFIED = "doctor_notified"
     CALL_ATTEMPTED = "call_attempted"

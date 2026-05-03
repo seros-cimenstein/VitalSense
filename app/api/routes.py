@@ -152,6 +152,17 @@ class TelemetryRequest(BaseModel):
     daily_steps: int = Field(0, ge=0)
 
 
+class ClinicalProfileRequest(BaseModel):
+    conditions: List[str] = Field(default_factory=list)
+    medications: List[str] = Field(default_factory=list)
+    allergies: List[str] = Field(default_factory=list)
+    care_notes: Optional[str] = None
+
+
+class ResolveSOSRequest(BaseModel):
+    note: Optional[str] = None
+
+
 class PatientStatus(BaseModel):
     patient_id: str
     risk_level: str
@@ -163,6 +174,7 @@ class PatientStatus(BaseModel):
     seconds_remaining: Optional[int] = None
     recent_breach_count: int
     sos_active: bool
+    sos_resolved_at: Optional[datetime] = None
     call_attempted: bool
     family_notifications_sent: int
     doctor_notifications_sent: int
@@ -175,6 +187,37 @@ class PatientDataExport(BaseModel):
     family: List[FamilyMember]
     recent_records: List[HealthRecord]
     recent_events: List[Event]
+
+
+def _last_event(events: List[Event], event_type: EventType) -> Optional[Event]:
+    return next((e for e in events if e.type == event_type), None)
+
+
+def _sos_state(events: List[Event]) -> tuple[bool, Optional[Event]]:
+    last_sos = _last_event(events, EventType.SOS_TRIGGERED)
+    if last_sos is None:
+        return False, None
+    last_confirm = _last_event(events, EventType.VERIFICATION_CONFIRMED)
+    last_resolve = _last_event(events, EventType.SOS_RESOLVED)
+    clear_events = [
+        e for e in (last_confirm, last_resolve)
+        if e is not None and e.timestamp > last_sos.timestamp
+    ]
+    last_clear = max(clear_events, key=lambda e: e.timestamp) if clear_events else None
+    active = last_clear is None
+    return active, last_clear
+
+
+def _clean_list(values: List[str]) -> List[str]:
+    seen = set()
+    cleaned = []
+    for value in values:
+        item = value.strip()
+        key = item.casefold()
+        if item and key not in seen:
+            cleaned.append(item)
+            seen.add(key)
+    return cleaned
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +269,10 @@ async def seed_demo(
             height_cm=174,
             weight_kg=82,
             doctor_id=doctor.id,
+            conditions=["Cardiac risk", "Hypertension"],
+            medications=["Beta blocker", "Daily aspirin"],
+            allergies=["Penicillin"],
+            care_notes="Lives independently; daughter should be contacted during escalations.",
             thresholds=PersonalizedThresholds(
                 heart_rate_min=55,
                 heart_rate_max=120,
@@ -339,11 +386,7 @@ async def get_patient_status(
         risk_score += 20
         summary = "Waiting for patient verification"
 
-    last_sos = next((e for e in events if e.type == EventType.SOS_TRIGGERED), None)
-    last_confirm = next((e for e in events if e.type == EventType.VERIFICATION_CONFIRMED), None)
-    sos_active = bool(
-        last_sos and (last_confirm is None or last_sos.timestamp > last_confirm.timestamp)
-    )
+    sos_active, last_clear = _sos_state(events)
     if sos_active:
         risk_score = max(risk_score, 90)
         summary = "SOS escalation is active"
@@ -371,6 +414,7 @@ async def get_patient_status(
         seconds_remaining=seconds_remaining,
         recent_breach_count=recent_breach_count,
         sos_active=sos_active,
+        sos_resolved_at=last_clear.timestamp if last_clear else None,
         call_attempted=call_attempted,
         family_notifications_sent=family_notifications_sent,
         doctor_notifications_sent=doctor_notifications_sent,
@@ -420,6 +464,23 @@ async def update_thresholds(
     _require_any_role(principal, AuthRole.ADMIN, AuthRole.DOCTOR)
     patient = _accessible_patient(patient_id, repo, principal)
     patient.thresholds = thresholds
+    return repo.save_patient(patient)
+
+
+@router.put("/patients/{patient_id}/clinical-profile", response_model=Patient)
+async def update_clinical_profile(
+    patient_id: str,
+    body: ClinicalProfileRequest,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> Patient:
+    _require_any_role(principal, AuthRole.ADMIN, AuthRole.DOCTOR)
+    patient = _accessible_patient(patient_id, repo, principal)
+    patient.conditions = _clean_list(body.conditions)
+    patient.medications = _clean_list(body.medications)
+    patient.allergies = _clean_list(body.allergies)
+    note = body.care_notes.strip() if body.care_notes else None
+    patient.care_notes = note or None
     return repo.save_patient(patient)
 
 
@@ -645,6 +706,40 @@ async def force_sos(
             detail="Manual demo escalation from dashboard; no recent telemetry",
         )
     return sos.initiate_emergency_protocol(patient, reason)
+
+
+@router.post("/sos/{patient_id}/resolve")
+async def resolve_sos(
+    patient_id: str,
+    body: ResolveSOSRequest,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+):
+    _require_any_role(principal, AuthRole.ADMIN, AuthRole.DOCTOR, AuthRole.PATIENT)
+    _accessible_patient(patient_id, repo, principal)
+
+    events = repo.recent_events(patient_id, limit=50)
+    sos_active, _ = _sos_state(events)
+    if not sos_active:
+        return {"resolved": False, "detail": "No active SOS escalation"}
+
+    note = body.note.strip() if body.note else ""
+    repo.append_event(
+        Event(
+            patient_id=patient_id,
+            type=EventType.SOS_RESOLVED,
+            message=(
+                f"SOS resolved by {principal.display_name}"
+                + (f": {note}" if note else ".")
+            ),
+            metadata={
+                "resolved_by": principal.username,
+                "role": principal.role.value,
+                "note": note,
+            },
+        )
+    )
+    return {"resolved": True}
 
 
 @router.get("/snapshot/{patient_id}/shared", response_model=HealthSnapshot)

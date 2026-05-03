@@ -330,6 +330,35 @@ async def test_patient_export_contains_linked_data(client):
 
 
 @pytest.mark.asyncio
+async def test_clinical_profile_updates_snapshot_and_export(client):
+    pid = await create_patient(client, name="Clinical")
+    update = await client.put(f"/api/patients/{pid}/clinical-profile", json={
+        "conditions": ["Hypertension", "hypertension", "Cardiac risk", " "],
+        "medications": ["Beta blocker", "Daily aspirin"],
+        "allergies": ["Penicillin"],
+        "care_notes": "Lives alone; call daughter first.",
+    })
+    assert update.status_code == 200
+    patient = update.json()
+    assert patient["conditions"] == ["Hypertension", "Cardiac risk"]
+    assert patient["medications"] == ["Beta blocker", "Daily aspirin"]
+    assert patient["allergies"] == ["Penicillin"]
+    assert patient["care_notes"] == "Lives alone; call daughter first."
+
+    await client.post(
+        f"/api/telemetry/{pid}",
+        json={"heart_rate": 80, "body_temperature": 36.7},
+    )
+    snapshot = await client.get(f"/api/snapshot/{pid}")
+    assert snapshot.status_code == 200
+    assert snapshot.json()["patient"]["conditions"] == ["Hypertension", "Cardiac risk"]
+
+    export = await client.get(f"/api/patients/{pid}/export")
+    assert export.status_code == 200
+    assert export.json()["patient"]["care_notes"] == "Lives alone; call daughter first."
+
+
+@pytest.mark.asyncio
 async def test_sos_snapshot_base_url_can_be_configured(client, monkeypatch):
     monkeypatch.setenv("VITALSENSE_SNAPSHOT_BASE_URL", "https://example.test/snapshots")
     reset_graph()
@@ -454,6 +483,30 @@ async def test_force_sos_endpoint(client):
     status = (await client.get(f"/api/patients/{pid}/status")).json()
     assert status["sos_active"] is True
     assert status["call_attempted"] is True
+
+
+@pytest.mark.asyncio
+async def test_resolve_sos_endpoint_clears_active_status(client):
+    pid = await create_patient(client, name="Resolve", age=40)
+    await client.post(
+        f"/api/telemetry/{pid}",
+        json={"heart_rate": 145, "body_temperature": 36.7},
+    )
+    await client.post(f"/api/sos/{pid}/force")
+
+    resolved = await client.post(
+        f"/api/sos/{pid}/resolve",
+        json={"note": "Patient reached by phone"},
+    )
+    assert resolved.status_code == 200
+    assert resolved.json() == {"resolved": True}
+
+    status = (await client.get(f"/api/patients/{pid}/status")).json()
+    assert status["sos_active"] is False
+    assert status["sos_resolved_at"] is not None
+
+    events = (await client.get(f"/api/events/{pid}")).json()
+    assert any(e["type"] == "sos_resolved" for e in events)
 
 
 @pytest.mark.asyncio
