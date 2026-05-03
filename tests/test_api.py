@@ -12,8 +12,9 @@ from app.main import app
 
 
 @pytest.fixture(autouse=True)
-def _fresh_state():
+def _fresh_state(monkeypatch):
     """Reset the repo + DI graph before every test so they don't share data."""
+    monkeypatch.setenv("VITALSENSE_REPOSITORY", "memory")
     reset_repository()
     reset_graph()
     yield
@@ -294,6 +295,38 @@ async def test_patient_status_reports_risk_and_countdown(client):
     assert body["verification_pending"] is True
     assert body["seconds_remaining"] is not None
     assert body["latest_record"]["heart_rate"] == 150
+
+
+@pytest.mark.asyncio
+async def test_patient_export_contains_linked_data(client):
+    doctor_response = await client.post("/api/doctors", json={
+        "name": "Dr. Export",
+        "contact_number": "+90-555-4444",
+        "specialty": "Internal Medicine",
+    })
+    assert doctor_response.status_code == 201
+    doctor_id = doctor_response.json()["id"]
+    pid = await create_patient(client, name="Export", doctor_id=doctor_id)
+
+    await client.post("/api/family", json={
+        "name": "Relative Export",
+        "contact_number": "+90-555-9999",
+        "relationship": "son",
+        "patient_id": pid,
+    })
+    await client.post(f"/api/telemetry/{pid}", json={
+        "heart_rate": 150,
+        "body_temperature": 36.7,
+    })
+
+    r = await client.get(f"/api/patients/{pid}/export")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["patient"]["id"] == pid
+    assert body["doctor"]["id"] == doctor_id
+    assert len(body["family"]) == 1
+    assert len(body["recent_records"]) == 1
+    assert any(e["type"] == "threshold_breach" for e in body["recent_events"])
 
 
 @pytest.mark.asyncio

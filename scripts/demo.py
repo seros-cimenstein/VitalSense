@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sys
 import time
+import os
 from pathlib import Path
 
 # allow running this script directly: ``python scripts/demo.py``
@@ -47,6 +48,7 @@ def print_events(repo, patient_id: str) -> None:
 
 
 def main() -> int:
+    os.environ["VITALSENSE_REPOSITORY"] = "memory"
     reset_repository()  # ensure a clean in-memory store
     repo = get_repository()
 

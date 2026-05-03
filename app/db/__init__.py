@@ -1,9 +1,8 @@
 """Storage layer.
 
-Uses Firebase Firestore in production (when VITALSENSE_USE_FIRESTORE=1),
-otherwise an in-memory store so the project runs and tests pass with no
-external dependencies. The Repository class abstracts which is in use.
+SQLite is the default runtime backend. Set VITALSENSE_REPOSITORY=memory for
+ephemeral demos/tests or VITALSENSE_REPOSITORY=firestore for Firebase.
 """
-from .repository import Repository, get_repository
+from .repository import Repository, SQLiteRepository, get_repository
 
-__all__ = ["Repository", "get_repository"]
+__all__ = ["Repository", "SQLiteRepository", "get_repository"]

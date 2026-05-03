@@ -151,6 +151,15 @@ class PatientStatus(BaseModel):
     doctor_notifications_sent: int
 
 
+class PatientDataExport(BaseModel):
+    generated_at: datetime
+    patient: Patient
+    doctor: Optional[Doctor] = None
+    family: List[FamilyMember]
+    recent_records: List[HealthRecord]
+    recent_events: List[Event]
+
+
 # ---------------------------------------------------------------------------
 # Patients
 # ---------------------------------------------------------------------------
@@ -348,6 +357,28 @@ async def get_patient_status(
         call_attempted=call_attempted,
         family_notifications_sent=family_notifications_sent,
         doctor_notifications_sent=doctor_notifications_sent,
+    )
+
+
+@router.get("/patients/{patient_id}/export", response_model=PatientDataExport)
+async def export_patient_data(
+    patient_id: str,
+    records_limit: int = 200,
+    events_limit: int = 200,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> PatientDataExport:
+    patient = _accessible_patient(patient_id, repo, principal)
+    records_limit = max(1, min(records_limit, 1000))
+    events_limit = max(1, min(events_limit, 1000))
+    doctor = repo.get_doctor(patient.doctor_id) if patient.doctor_id else None
+    return PatientDataExport(
+        generated_at=datetime.now(timezone.utc),
+        patient=patient,
+        doctor=doctor,
+        family=repo.list_family_for_patient(patient_id),
+        recent_records=repo.recent_records(patient_id, limit=records_limit),
+        recent_events=repo.recent_events(patient_id, limit=events_limit),
     )
 
 

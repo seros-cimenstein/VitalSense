@@ -10,3 +10,7 @@ firebase-credentials.json
 .DS_Store
 .vscode/
 .idea/
+data/
+*.db
+*.db-shm
+*.db-wal

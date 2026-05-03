@@ -847,6 +847,22 @@ $("delete-patient-btn").addEventListener("click", async () => {
   await refreshPatients();
 });
 
+$("export-data-btn").addEventListener("click", async () => {
+  if (!activePatient) return;
+  const payload = await api.get(`/patients/${activePatient.id}/export?records_limit=1000&events_limit=1000`);
+  if (!payload) return;
+  const filename = `${activePatient.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "patient"}-vitalsense-export.json`;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+});
+
 // ----- logout -----------------------------------------------------------
 
 $("logout-btn").addEventListener("click", () => {

@@ -12,7 +12,7 @@ The hybrid event-driven + layered architecture maps to:
 | Event Producers (Smartwatches, simulators) | `app/adapters/` (Apple, Samsung, Simulated) |
 | Event Router (Anomaly Detection Engine) | `app/core/anomaly_engine.py` |
 | Event Consumers (SOS, Doctor Connect) | `app/services/sos_service.py`, `app/services/notification_service.py` |
-| Data Storage (Firebase / PostgreSQL) | `app/db/repository.py` (`FirestoreRepository`, `InMemoryRepository`) |
+| Data Storage (SQLite / Firebase / memory) | `app/db/repository.py` (`SQLiteRepository`, `FirestoreRepository`, `InMemoryRepository`) |
 | Layered Architecture (User/Profile Service) | `app/api/routes.py` + `app/db/repository.py` (patient/doctor/family CRUD) |
 | API Gateway | `app/main.py` + `app/api/routes.py` (FastAPI) |
 
