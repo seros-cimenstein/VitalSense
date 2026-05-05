@@ -33,7 +33,9 @@
       </div>
       <div class="topbar-status">
         <span class="dot dot-live"></span>
+        <span class="live-label">live</span>
         <span id="status-text">monitoring</span>
+        <span id="sync-text">sync —</span>
       </div>
       <button id="logout-btn" class="btn-ghost" style="font-size:12px">sign out</button>
     </div>
@@ -84,6 +86,11 @@
           <div>
             <h1 id="patient-name">—</h1>
             <p id="patient-meta" class="patient-meta">—</p>
+            <div class="patient-live-strip">
+              <span class="dot dot-live"></span>
+              <span id="patient-live-state">waiting for readings</span>
+              <span id="last-reading-time">last reading —</span>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px">
             <div class="patient-bmi">
@@ -141,6 +148,28 @@
             <div class="vital-range">today</div>
           </article>
         </div>
+
+        <!-- Health chat -->
+        <section class="card chat-card" id="chat-card" hidden>
+          <header class="simulator-head">
+            <h2 class="section-title">Health chat</h2>
+            <button id="chat-share" class="btn-ghost">share summary</button>
+          </header>
+          <div id="chat-history" class="chat-history"></div>
+          <div id="chat-chips" class="chat-chips">
+            <button class="chat-chip" data-message="I feel dizzy">dizzy</button>
+            <button class="chat-chip" data-message="I have chest pain">chest pain</button>
+            <button class="chat-chip" data-message="I am short of breath">short breath</button>
+            <button class="chat-chip" data-message="I feel tired">tired</button>
+            <button class="chat-chip" data-message="I have a fever">fever</button>
+            <button class="chat-chip" data-message="I'm okay">I'm okay</button>
+          </div>
+          <div class="chat-compose">
+            <input id="chat-input" type="text" maxlength="1000" placeholder="How are you feeling today?" />
+            <button id="chat-send" class="btn-primary">send</button>
+            <button id="chat-trigger-sos" class="btn-danger" hidden>trigger SOS</button>
+          </div>
+        </section>
 
         <!-- Connected contacts -->
         <section class="card">

@@ -2,7 +2,17 @@
 from __future__ import annotations
 
 from app.db.repository import SQLiteRepository
-from app.models import Doctor, Event, EventType, FamilyMember, HealthRecord, Patient
+from app.models import (
+    ChatMessage,
+    ChatRole,
+    ChatUrgency,
+    Doctor,
+    Event,
+    EventType,
+    FamilyMember,
+    HealthRecord,
+    Patient,
+)
 
 
 def test_sqlite_repository_persists_core_data(tmp_path):
@@ -50,6 +60,14 @@ def test_sqlite_repository_persists_core_data(tmp_path):
             message="Persisted event",
         )
     )
+    chat = repo.append_chat_message(
+        ChatMessage(
+            patient_id=patient.id,
+            role=ChatRole.PATIENT,
+            content="I feel dizzy",
+            urgency=ChatUrgency.URGENT,
+        )
+    )
     repo.close()
 
     reopened = SQLiteRepository(db_path)
@@ -58,6 +76,7 @@ def test_sqlite_repository_persists_core_data(tmp_path):
     assert reopened.list_family_for_patient(patient.id)[0].id == member.id
     assert reopened.recent_records(patient.id)[0].id == record.id
     assert reopened.recent_events(patient.id)[0].id == event.id
+    assert reopened.recent_chat_messages(patient.id)[0].id == chat.id
     reopened.close()
 
 

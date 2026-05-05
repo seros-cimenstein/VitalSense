@@ -9,7 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_engine, get_repo, get_sos
+from app.api.deps import get_engine, get_health_chat, get_repo, get_sos
 from app.auth import (
     DEMO_DOCTOR_ID,
     DEMO_FAMILY_ID,
@@ -22,6 +22,8 @@ from app.auth import (
 from app.core import AnomalyDetectionEngine, BreachReason
 from app.db import Repository
 from app.models import (
+    ChatMessage,
+    ChatResult,
     Doctor,
     Event,
     EventType,
@@ -31,7 +33,7 @@ from app.models import (
     Patient,
     PersonalizedThresholds,
 )
-from app.services import SOSService
+from app.services import HealthChatService, SOSService
 
 
 router = APIRouter(
@@ -161,6 +163,17 @@ class ClinicalProfileRequest(BaseModel):
 
 class ResolveSOSRequest(BaseModel):
     note: Optional[str] = None
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=1000)
+    include_snapshot: bool = True
+
+
+class ShareChatResponse(BaseModel):
+    shared: bool
+    detail: str
+    doctor_summary: Optional[str] = None
 
 
 class PatientStatus(BaseModel):
@@ -595,6 +608,68 @@ async def create_family_member(
         patient_id=body.patient_id,
     )
     return repo.save_family_member(member)
+
+
+# ---------------------------------------------------------------------------
+# Health chat
+# ---------------------------------------------------------------------------
+
+@router.get("/chat/{patient_id}", response_model=List[ChatMessage])
+async def list_chat_messages(
+    patient_id: str,
+    limit: int = 30,
+    repo: Repository = Depends(get_repo),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> List[ChatMessage]:
+    _require_any_role(principal, AuthRole.ADMIN, AuthRole.PATIENT, AuthRole.DOCTOR)
+    _accessible_patient(patient_id, repo, principal)
+    limit = max(1, min(limit, 100))
+    return list(reversed(repo.recent_chat_messages(patient_id, limit=limit)))
+
+
+@router.post("/chat/{patient_id}", response_model=ChatResult)
+async def send_chat_message(
+    patient_id: str,
+    body: ChatRequest,
+    repo: Repository = Depends(get_repo),
+    chat: HealthChatService = Depends(get_health_chat),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> ChatResult:
+    _require_any_role(principal, AuthRole.ADMIN, AuthRole.PATIENT)
+    patient = _accessible_patient(patient_id, repo, principal)
+    try:
+        return chat.respond(
+            patient=patient,
+            message=body.message,
+            include_snapshot=body.include_snapshot,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+
+@router.post("/chat/{patient_id}/share", response_model=ShareChatResponse)
+async def share_chat_summary(
+    patient_id: str,
+    repo: Repository = Depends(get_repo),
+    chat: HealthChatService = Depends(get_health_chat),
+    principal: AuthenticatedUser = Depends(require_auth),
+) -> ShareChatResponse:
+    _require_any_role(principal, AuthRole.ADMIN, AuthRole.PATIENT, AuthRole.DOCTOR)
+    patient = _accessible_patient(patient_id, repo, principal)
+    summary = chat.share_latest_summary(patient, principal.display_name)
+    if summary is None:
+        return ShareChatResponse(
+            shared=False,
+            detail="No doctor summary is available yet",
+        )
+    return ShareChatResponse(
+        shared=True,
+        detail="Doctor summary saved to the patient timeline",
+        doctor_summary=summary,
+    )
 
 
 # ---------------------------------------------------------------------------

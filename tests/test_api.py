@@ -359,6 +359,82 @@ async def test_clinical_profile_updates_snapshot_and_export(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_endpoint_classifies_emergency_and_stores_history(client):
+    pid = await create_patient(client, name="Chat", age=54)
+    await client.post(
+        f"/api/telemetry/{pid}",
+        json={"heart_rate": 86, "body_temperature": 36.8},
+    )
+
+    response = await client.post(
+        f"/api/chat/{pid}",
+        json={"message": "I feel dizzy and have chest pain"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["urgency"] == "emergency"
+    assert body["recommended_action"] == "trigger_sos"
+    assert body["event_logged"] is True
+    assert "Patient reports" in body["doctor_summary"]
+
+    history = await client.get(f"/api/chat/{pid}")
+    assert history.status_code == 200
+    messages = history.json()
+    assert [m["role"] for m in messages] == ["patient", "assistant"]
+    assert messages[1]["metadata"]["recommended_action"] == "trigger_sos"
+
+    events = (await client.get(f"/api/events/{pid}")).json()
+    assert any(e["type"] == "chat_triage" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_chat_share_saves_latest_summary_to_timeline(client):
+    pid = await create_patient(client, name="Share Chat", age=54)
+    await client.post(
+        f"/api/chat/{pid}",
+        json={"message": "I feel tired today"},
+    )
+
+    shared = await client.post(f"/api/chat/{pid}/share")
+    assert shared.status_code == 200
+    assert shared.json()["shared"] is True
+    assert "Patient reports" in shared.json()["doctor_summary"]
+
+    events = (await client.get(f"/api/events/{pid}")).json()
+    assert any("Chat summary shared" in e["message"] for e in events)
+
+
+@pytest.mark.asyncio
+async def test_chat_access_excludes_relative_and_prevents_doctor_post():
+    doctor_auth = await login_as("doctor", "doctor")
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+        headers=headers_for(doctor_auth),
+    ) as doctor_client:
+        seeded = await doctor_client.post("/api/demo/seed")
+        assert seeded.status_code == 201
+
+        history = await doctor_client.get(f"/api/chat/{DEMO_PATIENT_ID}")
+        assert history.status_code == 200
+
+        denied_post = await doctor_client.post(
+            f"/api/chat/{DEMO_PATIENT_ID}",
+            json={"message": "Doctor note"},
+        )
+        assert denied_post.status_code == 403
+
+    relative_auth = await login_as("relative", "relative")
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+        headers=headers_for(relative_auth),
+    ) as relative_client:
+        denied_history = await relative_client.get(f"/api/chat/{DEMO_PATIENT_ID}")
+        assert denied_history.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_sos_snapshot_base_url_can_be_configured(client, monkeypatch):
     monkeypatch.setenv("VITALSENSE_SNAPSHOT_BASE_URL", "https://example.test/snapshots")
     reset_graph()

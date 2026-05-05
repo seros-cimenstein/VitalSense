@@ -67,6 +67,14 @@ html, body {
   color: var(--bg-card);
   border-radius: 10px;
 }
+.brand-mark path {
+  stroke-dasharray: 42;
+  stroke-dashoffset: 84;
+  animation: ekgTrace 2.4s linear infinite;
+}
+@keyframes ekgTrace {
+  to { stroke-dashoffset: 0; }
+}
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
 .brand-name {
   font-family: "Fraunces", serif;
@@ -114,6 +122,16 @@ html, body {
   letter-spacing: 0.16em;
   color: var(--ink-soft);
 }
+.live-label {
+  color: var(--ok);
+  font-weight: 700;
+}
+#sync-text {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--ink-mute);
+  letter-spacing: 0.08em;
+}
 .dot {
   width: 8px; height: 8px;
   border-radius: 50%;
@@ -123,6 +141,9 @@ html, body {
   background: var(--ok);
   box-shadow: 0 0 0 0 rgba(63, 125, 91, 0.5);
   animation: pulse 2s infinite;
+}
+.telemetry-streaming .dot-live {
+  animation-duration: 1s;
 }
 @keyframes pulse {
   0% { box-shadow: 0 0 0 0 rgba(63, 125, 91, 0.45); }
@@ -334,6 +355,26 @@ textarea:focus { border-color: var(--accent); }
   color: var(--ink-mute);
   font-family: "JetBrains Mono", monospace;
 }
+.patient-live-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.patient-live-strip .dot {
+  width: 7px;
+  height: 7px;
+}
+#last-reading-time {
+  color: var(--ink-mute);
+  text-transform: none;
+  letter-spacing: 0;
+}
 .patient-bmi { text-align: right; }
 .metric-label {
   display: block;
@@ -438,6 +479,8 @@ textarea:focus { border-color: var(--accent); }
   .vitals-grid { grid-template-columns: 1fr; }
 }
 .vital-card {
+  position: relative;
+  overflow: hidden;
   background: var(--bg-card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -445,9 +488,55 @@ textarea:focus { border-color: var(--accent); }
   box-shadow: var(--shadow-sm);
   transition: border-color 0.2s, background 0.2s;
 }
+.vital-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(15, 76, 79, 0.06) 42%,
+    transparent 72%
+  );
+  transform: translateX(-120%);
+  animation: liveSweep 4s linear infinite;
+}
+@keyframes liveSweep {
+  to { transform: translateX(120%); }
+}
 .vital-card.breach {
   border-color: var(--warn);
   background: var(--warn-soft);
+}
+.vital-card.just-updated {
+  animation: vitalUpdate 0.85s ease-out;
+}
+@keyframes vitalUpdate {
+  0% {
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 0 rgba(15, 76, 79, 0.26);
+  }
+  100% {
+    transform: translateY(0);
+    box-shadow: var(--shadow-sm);
+  }
+}
+.vital-card .metric-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.vital-card .metric-label::after {
+  content: "live";
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--ok);
+  background: rgba(63, 125, 91, 0.12);
+  border: 1px solid rgba(63, 125, 91, 0.22);
+  border-radius: 999px;
+  padding: 2px 6px;
+  letter-spacing: 0.08em;
 }
 .vital-readout {
   display: flex; align-items: baseline; gap: 6px;
@@ -627,6 +716,108 @@ textarea:focus { border-color: var(--accent); }
   color: var(--ink-soft);
   font-size: 13px;
   white-space: pre-wrap;
+}
+
+/* health chat */
+.chat-card {
+  border-color: rgba(15, 76, 79, 0.18);
+}
+.chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  min-height: 164px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.chat-message {
+  width: min(78%, 620px);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+.chat-patient {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--bg-card);
+}
+.chat-assistant {
+  align-self: flex-start;
+}
+.chat-urgent,
+.chat-emergency {
+  border-color: rgba(200, 74, 59, 0.45);
+}
+.chat-emergency {
+  background: var(--warn-soft);
+}
+.chat-message-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 5px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-mute);
+}
+.chat-patient .chat-message-head {
+  color: rgba(255, 250, 242, 0.72);
+}
+.chat-message p {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+}
+.chat-chip {
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: "Manrope", sans-serif;
+}
+.chat-chip:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.chat-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+}
+.chat-compose input {
+  width: 100%;
+  font-family: "Manrope", system-ui, sans-serif;
+}
+.chat-compose .btn-primary,
+.chat-compose .btn-danger {
+  width: auto;
+  min-width: 96px;
+}
+@media (max-width: 700px) {
+  .chat-message { width: 92%; }
+  .chat-compose {
+    grid-template-columns: 1fr;
+  }
+  .chat-compose .btn-primary,
+  .chat-compose .btn-danger {
+    width: 100%;
+  }
 }
 
 /* simulator */

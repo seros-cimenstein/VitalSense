@@ -5,6 +5,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.models import (
+    ChatMessage,
+    ChatRecommendedAction,
+    ChatResult,
+    ChatRole,
+    ChatUrgency,
     Doctor,
     HealthRecord,
     Patient,
@@ -62,6 +67,23 @@ def test_health_record_round_trips_through_pydantic():
     assert rebuilt.patient_id == r.patient_id
     assert rebuilt.heart_rate == r.heart_rate
     assert rebuilt.body_temperature == r.body_temperature
+
+
+def test_chat_models_default_to_routine_triage():
+    message = ChatMessage(
+        patient_id="p1",
+        role=ChatRole.PATIENT,
+        content="I feel okay",
+    )
+    assert message.urgency == ChatUrgency.ROUTINE
+    assert message.metadata == {}
+
+    result = ChatResult(
+        reply="Keep monitoring.",
+        doctor_summary="Patient reports feeling okay.",
+    )
+    assert result.recommended_action == ChatRecommendedAction.NONE
+    assert result.event_logged is False
 
 
 def test_doctor_inherits_user_role():

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from app.models import (
+    ChatMessage,
     Doctor,
     Event,
     FamilyMember,
@@ -53,6 +54,14 @@ class Repository:
     def append_event(self, event: Event) -> Event: ...
     def recent_events(self, patient_id: str, limit: int = 50) -> List[Event]: ...
 
+    # health chat
+    def append_chat_message(self, message: ChatMessage) -> ChatMessage: ...
+    def recent_chat_messages(
+        self,
+        patient_id: str,
+        limit: int = 30,
+    ) -> List[ChatMessage]: ...
+
 
 def _dump(model) -> str:
     return json.dumps(model.model_dump(mode="json"), separators=(",", ":"), sort_keys=True)
@@ -74,6 +83,7 @@ class InMemoryRepository(Repository):
         self._family: Dict[str, FamilyMember] = {}
         self._records: Dict[str, List[HealthRecord]] = defaultdict(list)
         self._events: Dict[str, List[Event]] = defaultdict(list)
+        self._chat_messages: Dict[str, List[ChatMessage]] = defaultdict(list)
 
     # patients --------------------------------------------------------------
     def save_patient(self, patient: Patient) -> Patient:
@@ -152,6 +162,20 @@ class InMemoryRepository(Repository):
         events = self._events.get(patient_id, [])
         return sorted(events, key=lambda e: e.timestamp, reverse=True)[:limit]
 
+    # health chat -----------------------------------------------------------
+    def append_chat_message(self, message: ChatMessage) -> ChatMessage:
+        with self._lock:
+            self._chat_messages[message.patient_id].append(message)
+            return message
+
+    def recent_chat_messages(
+        self,
+        patient_id: str,
+        limit: int = 30,
+    ) -> List[ChatMessage]:
+        messages = self._chat_messages.get(patient_id, [])
+        return sorted(messages, key=lambda m: m.created_at, reverse=True)[:limit]
+
 
 # ---------------------------------------------------------------------------
 # SQLite implementation (default runtime persistence)
@@ -214,6 +238,14 @@ class SQLiteRepository(Repository):
                 );
                 CREATE INDEX IF NOT EXISTS idx_events_patient_time
                     ON events(patient_id, timestamp DESC);
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id TEXT PRIMARY KEY,
+                    patient_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    data TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_chat_patient_time
+                    ON chat_messages(patient_id, created_at DESC);
                 """
             )
             self._conn.commit()
@@ -360,6 +392,37 @@ class SQLiteRepository(Repository):
             ).fetchall()
         return [_load(Event, row["data"]) for row in rows]
 
+    # health chat -----------------------------------------------------------
+    def append_chat_message(self, message: ChatMessage) -> ChatMessage:
+        self._upsert(
+            "chat_messages",
+            {
+                "id": message.id,
+                "patient_id": message.patient_id,
+                "created_at": message.created_at.isoformat(),
+                "data": _dump(message),
+            },
+            ["patient_id", "created_at", "data"],
+        )
+        return message
+
+    def recent_chat_messages(
+        self,
+        patient_id: str,
+        limit: int = 30,
+    ) -> List[ChatMessage]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT data FROM chat_messages
+                WHERE patient_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (patient_id, limit),
+            ).fetchall()
+        return [_load(ChatMessage, row["data"]) for row in rows]
+
 
 # ---------------------------------------------------------------------------
 # Firestore implementation
@@ -486,6 +549,28 @@ class FirestoreRepository(Repository):
             .stream()
         )
         return [Event(**d.to_dict()) for d in docs]
+
+    # health chat -----------------------------------------------------------
+    def append_chat_message(self, message: ChatMessage) -> ChatMessage:
+        self._db.collection("chat_messages").document(message.id).set(
+            message.model_dump(mode="json")
+        )
+        return message
+
+    def recent_chat_messages(
+        self,
+        patient_id: str,
+        limit: int = 30,
+    ) -> List[ChatMessage]:
+        from firebase_admin import firestore as _fs
+        docs = (
+            self._db.collection("chat_messages")
+            .where("patient_id", "==", patient_id)
+            .order_by("created_at", direction=_fs.Query.DESCENDING)
+            .limit(limit)
+            .stream()
+        )
+        return [ChatMessage(**d.to_dict()) for d in docs]
 
 
 # ---------------------------------------------------------------------------

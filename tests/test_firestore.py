@@ -7,7 +7,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.models import Doctor, Event, EventType, FamilyMember, HealthRecord, Patient
+from app.models import (
+    ChatMessage,
+    ChatRole,
+    Doctor,
+    Event,
+    EventType,
+    FamilyMember,
+    HealthRecord,
+    Patient,
+)
 
 
 def _make_doc_snap(data: dict, exists: bool = True):
@@ -222,3 +231,26 @@ class TestFirestoreEvents:
         results = self.repo.recent_events("p1", limit=10)
         assert len(results) == 1
         assert results[0].type == EventType.THRESHOLD_BREACH
+
+
+# ---------------------------------------------------------------------------
+# Chat messages
+# ---------------------------------------------------------------------------
+
+class TestFirestoreChatMessages:
+    def setup_method(self):
+        self.repo, self.db = _build_firestore_repo()
+
+    def test_append_chat_message(self):
+        message = ChatMessage(patient_id="p1", role=ChatRole.PATIENT, content="I feel tired")
+        self.repo.append_chat_message(message)
+        self.db.collection.assert_called_with("chat_messages")
+        self.db.collection().document().set.assert_called_once()
+
+    def test_recent_chat_messages(self):
+        message = ChatMessage(patient_id="p1", role=ChatRole.ASSISTANT, content="Keep monitoring.")
+        chain = self.db.collection().where().order_by().limit().stream
+        chain.return_value = [_make_doc_snap(message.model_dump(mode="json"))]
+        results = self.repo.recent_chat_messages("p1", limit=10)
+        assert len(results) == 1
+        assert results[0].role == ChatRole.ASSISTANT

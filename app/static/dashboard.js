@@ -88,6 +88,7 @@ let pollHandle = null;
 let streamHandle = null;
 let countdownHandle = null;
 let allDoctors = [];
+let lastVitalValues = {};
 const STREAM_INTERVAL_MS = 2500;
 
 // element refs
@@ -126,6 +127,18 @@ function canEditClinicalProfile() {
   return hasRole("admin", "doctor");
 }
 
+function canViewChat() {
+  return hasRole("admin", "patient", "doctor");
+}
+
+function canSendChat() {
+  return hasRole("admin", "patient");
+}
+
+function canShareChat() {
+  return hasRole("admin", "patient", "doctor");
+}
+
 function roleLabel(role) {
   return {
     admin: "Admin",
@@ -154,6 +167,8 @@ function applyAccessControls() {
   const canUseTelemetry = canUseTelemetryControls();
   const canVerify = canVerifyPatient();
   const canEditClinical = canEditClinicalProfile();
+  const canViewHealthChat = canViewChat();
+  const canSendHealthChat = canSendChat();
 
   $("new-patient-btn").hidden = !canManage;
   $("new-doctor-btn").hidden = !canManage;
@@ -164,6 +179,11 @@ function applyAccessControls() {
   $("simulator-card").hidden = !canUseTelemetry;
   $("confirm-ok").hidden = !canVerify;
   $("force-sos").hidden = !canUseTelemetry;
+  $("chat-card").hidden = !canViewHealthChat;
+  $("chat-send").hidden = !canSendHealthChat;
+  $("chat-chips").hidden = !canSendHealthChat;
+  $("chat-input").disabled = !canSendHealthChat;
+  $("chat-share").hidden = !canShareChat();
   ["hr-min", "hr-max", "t-min", "t-max"].forEach((id) => {
     $(id).disabled = !canTune;
   });
@@ -201,13 +221,14 @@ async function selectPatient(id) {
   const p = await api.get(`/patients/${id}`);
   if (!p) return;
   activePatient = p;
+  lastVitalValues = {};
   emptyState.hidden = true;
   patientView.hidden = false;
   thresholdCard.hidden = false;
   applyAccessControls();
   await refreshPatients();
   renderPatient();
-  await Promise.all([refreshTimeline(), refreshContacts()]);
+  await Promise.all([refreshTimeline(), refreshContacts(), refreshChat()]);
   startPolling();
 }
 
@@ -244,22 +265,22 @@ async function refreshTimeline() {
     api.get(`/patients/${activePatient.id}/status`),
   ]);
   if (!events || !records || !status) return;
+  markSynced();
   renderRiskStatus(status);
   renderTrendChart(records.slice().reverse());
 
   // latest record drives vital cards
   if (records.length) {
-    const r = records[0];
-    $("vital-hr").textContent = r.heart_rate;
-    $("vital-temp").textContent = r.body_temperature.toFixed(1);
-    $("vital-steps").textContent = r.daily_steps;
+    renderLatestVitals(records[0]);
 
     const t = activePatient.thresholds;
     document.querySelectorAll(".vital-card").forEach((c) => c.classList.remove("breach"));
-    const hrBreach = r.heart_rate < t.heart_rate_min || r.heart_rate > t.heart_rate_max;
-    const tempBreach = r.body_temperature < t.temperature_min || r.body_temperature > t.temperature_max;
+    const hrBreach = records[0].heart_rate < t.heart_rate_min || records[0].heart_rate > t.heart_rate_max;
+    const tempBreach = records[0].body_temperature < t.temperature_min || records[0].body_temperature > t.temperature_max;
     if (hrBreach) document.querySelectorAll(".vital-card")[0].classList.add("breach");
     if (tempBreach) document.querySelectorAll(".vital-card")[1].classList.add("breach");
+  } else {
+    updatePatientLiveState(null);
   }
 
   verBanner.hidden = !status.verification_pending;
@@ -299,6 +320,54 @@ async function refreshTimeline() {
   await refreshSnapshot();
 }
 
+function renderLatestVitals(record) {
+  const cards = document.querySelectorAll(".vital-card");
+  updateVitalValue("vital-hr", String(record.heart_rate), cards[0]);
+  updateVitalValue("vital-temp", Number(record.body_temperature).toFixed(1), cards[1]);
+  updateVitalValue("vital-steps", String(record.daily_steps), cards[2]);
+  updatePatientLiveState(record);
+}
+
+function updateVitalValue(id, value, card) {
+  const target = $(id);
+  const previous = lastVitalValues[id];
+  target.textContent = value;
+  if (previous !== undefined && previous !== value && card) {
+    card.classList.remove("just-updated");
+    void card.offsetWidth;
+    card.classList.add("just-updated");
+    window.setTimeout(() => card.classList.remove("just-updated"), 900);
+  }
+  lastVitalValues[id] = value;
+}
+
+function updatePatientLiveState(record) {
+  if (!record) {
+    $("patient-live-state").textContent = "waiting for telemetry";
+    $("last-reading-time").textContent = "last reading —";
+    return;
+  }
+  const ageMs = Date.now() - new Date(record.timestamp).getTime();
+  const isFresh = ageMs < 15000;
+  const mode = streamHandle ? "streaming telemetry" : (isFresh ? "receiving live data" : "polling records");
+  $("patient-live-state").textContent = mode;
+  $("last-reading-time").textContent = `last reading ${relativeTime(record.timestamp)}`;
+}
+
+function markSynced() {
+  $("sync-text").textContent = `sync ${new Date().toLocaleTimeString()}`;
+}
+
+function relativeTime(timestamp) {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000));
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
 function renderRiskStatus(status) {
   const panel = $("risk-panel");
   panel.classList.remove("risk-normal", "risk-warning", "risk-critical");
@@ -332,6 +401,73 @@ function renderClinicalList(id, values) {
     chip.className = "clinical-chip";
     chip.textContent = value;
     target.appendChild(chip);
+  }
+}
+
+// ----- health chat ------------------------------------------------------
+
+async function refreshChat() {
+  if (!activePatient || !canViewChat()) return;
+  const messages = await api.get(`/chat/${activePatient.id}?limit=30`);
+  if (!messages) return;
+  renderChat(messages);
+}
+
+function renderChat(messages) {
+  const history = $("chat-history");
+  history.innerHTML = "";
+  if (!messages.length) {
+    history.appendChild(chatBubble({
+      role: "assistant",
+      content: "How are you feeling today? I can compare what you tell me with your latest vitals and prepare a note for your doctor.",
+      urgency: "routine",
+    }));
+  } else {
+    for (const message of messages) {
+      history.appendChild(chatBubble(message));
+    }
+  }
+  const latestAssistant = messages
+    .slice()
+    .reverse()
+    .find((message) => message.role === "assistant");
+  const action = latestAssistant?.metadata?.recommended_action;
+  $("chat-trigger-sos").hidden = !(action === "trigger_sos" && canUseTelemetryControls());
+  history.scrollTop = history.scrollHeight;
+}
+
+function chatBubble(message) {
+  const div = document.createElement("div");
+  div.className = `chat-message chat-${message.role} chat-${message.urgency || "routine"}`;
+  const time = message.created_at ? new Date(message.created_at).toLocaleTimeString() : "";
+  div.innerHTML = `
+    <div class="chat-message-head">
+      <span>${message.role === "patient" ? "Patient" : "VitalSense"}</span>
+      <span>${time}</span>
+    </div>
+    <p>${escapeHtml(message.content)}</p>
+  `;
+  return div;
+}
+
+async function sendChatMessage(text) {
+  if (!activePatient || !canSendChat()) return;
+  const message = text.trim();
+  if (!message) return;
+  $("chat-send").disabled = true;
+  try {
+    const result = await api.post(`/chat/${activePatient.id}`, {
+      message,
+      include_snapshot: true,
+    });
+    $("chat-input").value = "";
+    await refreshChat();
+    await refreshTimeline();
+    if (result?.recommended_action === "trigger_sos" && canUseTelemetryControls()) {
+      $("chat-trigger-sos").hidden = false;
+    }
+  } finally {
+    $("chat-send").disabled = false;
   }
 }
 
@@ -466,7 +602,7 @@ function drawSeries(ctx, records, opts) {
 }
 
 function eventClass(type) {
-  if (["sos_triggered", "threshold_breach", "family_notified", "doctor_notified"].includes(type))
+  if (["sos_triggered", "threshold_breach", "family_notified", "doctor_notified", "chat_triage"].includes(type))
     return "ev-warn";
   if (["verification_confirmed", "sos_resolved"].includes(type)) return "ev-ok";
   if (type === "call_attempted") return "ev-call";
@@ -648,6 +784,8 @@ function startTelemetryStream() {
   streamHandle = setInterval(() => pushSimulatedReading({ jitter: true }), STREAM_INTERVAL_MS);
   $("stream-telemetry").textContent = "stop stream";
   $("push-telemetry").disabled = true;
+  document.body.classList.add("telemetry-streaming");
+  $("patient-live-state").textContent = "streaming telemetry";
   document.querySelector(".simulator-actions").classList.add("streaming");
 }
 
@@ -657,6 +795,7 @@ function stopTelemetryStream() {
   streamHandle = null;
   $("stream-telemetry").textContent = "start stream";
   $("push-telemetry").disabled = false;
+  document.body.classList.remove("telemetry-streaming");
   document.querySelector(".simulator-actions").classList.remove("streaming");
 }
 
@@ -730,6 +869,38 @@ $("resolve-sos").addEventListener("click", async () => {
   const note = prompt("Resolution note", "Patient contacted and situation resolved.");
   if (note === null) return;
   await api.post(`/sos/${activePatient.id}/resolve`, { note });
+  await refreshTimeline();
+});
+
+$("chat-send").addEventListener("click", () => {
+  sendChatMessage($("chat-input").value);
+});
+
+$("chat-input").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    sendChatMessage($("chat-input").value);
+  }
+});
+
+document.querySelectorAll(".chat-chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    sendChatMessage(chip.dataset.message || chip.textContent);
+  });
+});
+
+$("chat-share").addEventListener("click", async () => {
+  if (!activePatient || !canShareChat()) return;
+  const response = await api.post(`/chat/${activePatient.id}/share`);
+  if (!response) return;
+  alert(response.detail);
+  await refreshTimeline();
+});
+
+$("chat-trigger-sos").addEventListener("click", async () => {
+  if (!activePatient || !canUseTelemetryControls()) return;
+  if (!confirm(`Trigger SOS escalation for ${activePatient.name}?`)) return;
+  await api.post(`/sos/${activePatient.id}/force`);
   await refreshTimeline();
 });
 

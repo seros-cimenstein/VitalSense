@@ -7,7 +7,7 @@ from functools import lru_cache
 from app.core import AnomalyDetectionEngine
 from app.db import Repository, get_repository
 from app.auth import create_snapshot_access_token
-from app.services import ConsoleNotifier, NotificationService, SOSService
+from app.services import ConsoleNotifier, HealthChatService, NotificationService, SOSService
 from app.services.notification_service import TwilioNotifier
 
 
@@ -21,7 +21,7 @@ def _build_notifier():
 
 
 @lru_cache(maxsize=1)
-def _build_graph() -> tuple[Repository, SOSService, AnomalyDetectionEngine]:
+def _build_graph() -> tuple[Repository, SOSService, AnomalyDetectionEngine, HealthChatService]:
     repo = get_repository()
     notifier = _build_notifier()
     notif_service = NotificationService(notifier)
@@ -53,7 +53,8 @@ def _build_graph() -> tuple[Repository, SOSService, AnomalyDetectionEngine]:
         sos,
         verification_notifier=verification_prompt,
     )
-    return repo, sos, engine
+    chat = HealthChatService(repo)
+    return repo, sos, engine, chat
 
 
 async def get_repo() -> Repository:
@@ -66,6 +67,10 @@ async def get_sos() -> SOSService:
 
 async def get_engine() -> AnomalyDetectionEngine:
     return _build_graph()[2]
+
+
+async def get_health_chat() -> HealthChatService:
+    return _build_graph()[3]
 
 
 def reset_graph() -> None:

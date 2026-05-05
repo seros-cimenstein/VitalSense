@@ -135,6 +135,7 @@ class EventType(str, Enum):
     FAMILY_NOTIFIED = "family_notified"
     DOCTOR_NOTIFIED = "doctor_notified"
     CALL_ATTEMPTED = "call_attempted"
+    CHAT_TRIAGE = "chat_triage"
 
 
 class Event(BaseModel):
@@ -144,3 +145,45 @@ class Event(BaseModel):
     message: str
     timestamp: datetime = Field(default_factory=_now)
     metadata: dict = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Health chat
+# ---------------------------------------------------------------------------
+
+class ChatRole(str, Enum):
+    PATIENT = "patient"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
+class ChatUrgency(str, Enum):
+    ROUTINE = "routine"
+    WATCH = "watch"
+    URGENT = "urgent"
+    EMERGENCY = "emergency"
+
+
+class ChatRecommendedAction(str, Enum):
+    NONE = "none"
+    VERIFY = "verify"
+    SHARE_DOCTOR = "share_doctor"
+    TRIGGER_SOS = "trigger_sos"
+
+
+class ChatMessage(BaseModel):
+    id: str = Field(default_factory=_new_id)
+    patient_id: str
+    role: ChatRole
+    content: str
+    urgency: ChatUrgency = ChatUrgency.ROUTINE
+    created_at: datetime = Field(default_factory=_now)
+    metadata: dict = Field(default_factory=dict)
+
+
+class ChatResult(BaseModel):
+    reply: str
+    urgency: ChatUrgency = ChatUrgency.ROUTINE
+    recommended_action: ChatRecommendedAction = ChatRecommendedAction.NONE
+    doctor_summary: str
+    event_logged: bool = False

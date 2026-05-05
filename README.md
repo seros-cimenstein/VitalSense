@@ -150,6 +150,9 @@ The project runs out-of-the-box with SQLite. To use real Firestore:
 | `POST` | `/api/wearable/{patient_id}/telemetry` | Push device telemetry with `X-VitalSense-Device-Key` |
 | `POST` | `/api/verify/{patient_id}` | Patient confirms they're OK |
 | `POST` | `/api/sos/{patient_id}/resolve` | Mark an active SOS escalation resolved |
+| `POST` | `/api/chat/{patient_id}` | Send a check-in message to the rule-based health chat |
+| `GET`  | `/api/chat/{patient_id}` | Fetch recent patient/assistant chat turns |
+| `POST` | `/api/chat/{patient_id}/share` | Save the latest doctor summary to the timeline |
 | `GET`  | `/api/snapshot/{patient_id}` | Doctor pulls a health snapshot |
 | `GET`  | `/api/snapshot/{patient_id}/shared` | Tokenized snapshot payload for SOS doctor links |
 | `GET`  | `/api/events/{patient_id}` | Recent anomaly/SOS events |
