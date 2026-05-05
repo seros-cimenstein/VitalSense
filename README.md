@@ -89,6 +89,20 @@ Default demo logins:
 | Doctor | `doctor` | `doctor` | Assigned patient monitoring, threshold tuning, SOS |
 | Relative | `relative` | `relative` | Read-only linked patient monitoring |
 
+### Multi-panel SOS demo
+
+To see the patient and relative views react at the same time, use separate
+browser sessions because the dashboard stores one login token in `localStorage`.
+
+1. Open `http://127.0.0.1:8000` as `admin/admin`, press `load demo`, and select
+   Ahmet Yilmaz.
+2. Open a private window or another browser at the same URL and login as
+   `relative/relative`.
+3. In the admin or patient session, press `force SOS`, or send an AI chat message
+   such as "I have chest pain" and then press `trigger SOS`.
+4. The relative session should show a red `Relative device alert` panel within
+   the next polling cycle.
+
 ## Data persistence
 
 VitalSense uses SQLite by default and stores data at `data/vitalsense.db`.
@@ -125,6 +139,33 @@ default before exposing the bridge beyond a classroom demo:
 export VITALSENSE_DEVICE_API_KEY=replace-with-a-random-secret
 ```
 
+Health chat uses a baked-in local triage model by default. For a low-cost,
+low-latency Gemini setup, create a local `.env` file or export:
+
+```bash
+export VITALSENSE_CHAT_MODEL_PROVIDER=gemini
+export GEMINI_API_KEY=replace-with-provider-token
+export VITALSENSE_CHAT_GEMINI_MODEL=gemini-2.5-flash-lite
+```
+
+`.env` is ignored by git and loaded automatically when the chat model is built.
+`gemini-2.5-flash-lite` is the current Flash-Lite target for this app; the older
+2.0 Flash-Lite model has a 2.5 Flash-Lite replacement.
+
+To point the same chat contract at a custom external model API instead,
+configure:
+
+```bash
+export VITALSENSE_CHAT_MODEL_PROVIDER=api
+export VITALSENSE_CHAT_API_URL=https://your-chat-model.example/respond
+export VITALSENSE_CHAT_API_TOKEN=replace-with-provider-token
+export VITALSENSE_CHAT_API_MODEL=vitalsense-health-chat-small
+```
+
+The API should return JSON with `reply`, `urgency`, `recommended_action`, and
+`doctor_summary`. If the API is unavailable, VitalSense falls back to the local
+triage model.
+
 ## Firebase setup (optional)
 
 The project runs out-of-the-box with SQLite. To use real Firestore:
@@ -150,7 +191,7 @@ The project runs out-of-the-box with SQLite. To use real Firestore:
 | `POST` | `/api/wearable/{patient_id}/telemetry` | Push device telemetry with `X-VitalSense-Device-Key` |
 | `POST` | `/api/verify/{patient_id}` | Patient confirms they're OK |
 | `POST` | `/api/sos/{patient_id}/resolve` | Mark an active SOS escalation resolved |
-| `POST` | `/api/chat/{patient_id}` | Send a check-in message to the rule-based health chat |
+| `POST` | `/api/chat/{patient_id}` | Send a check-in message to the health chat |
 | `GET`  | `/api/chat/{patient_id}` | Fetch recent patient/assistant chat turns |
 | `POST` | `/api/chat/{patient_id}/share` | Save the latest doctor summary to the timeline |
 | `GET`  | `/api/snapshot/{patient_id}` | Doctor pulls a health snapshot |

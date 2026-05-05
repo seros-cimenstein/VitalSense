@@ -190,6 +190,56 @@ html, body {
   letter-spacing: 0.02em;
 }
 
+.relative-sos-alert {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  margin: 0 0 16px;
+  border: 1px solid rgba(200, 74, 59, 0.55);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  box-shadow: var(--shadow-sm);
+}
+.relative-sos-alert h2 {
+  margin: 4px 0 4px;
+  font-family: "Fraunces", serif;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--warn);
+}
+.relative-sos-alert p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.relative-sos-meta {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--warn);
+}
+.relative-sos-alert.just-updated {
+  animation: sosAlertPulse 1.15s ease-out;
+}
+@keyframes sosAlertPulse {
+  0% { transform: scale(0.985); box-shadow: 0 0 0 0 rgba(200, 74, 59, 0.28); }
+  55% { transform: scale(1); box-shadow: 0 0 0 10px rgba(200, 74, 59, 0); }
+  100% { transform: scale(1); box-shadow: var(--shadow-sm); }
+}
+@media (max-width: 700px) {
+  .relative-sos-alert {
+    grid-template-columns: 1fr;
+  }
+  .relative-sos-meta {
+    justify-items: start;
+  }
+}
+
 /* sidebar */
 .sidebar { min-width: 0; }
 .patient-list {
@@ -722,6 +772,15 @@ textarea:focus { border-color: var(--accent); }
 .chat-card {
   border-color: rgba(15, 76, 79, 0.18);
 }
+.chat-model-status {
+  display: inline-block;
+  margin-top: 3px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
 .chat-history {
   display: flex;
   flex-direction: column;
@@ -748,6 +807,9 @@ textarea:focus { border-color: var(--accent); }
 }
 .chat-assistant {
   align-self: flex-start;
+}
+.chat-pending {
+  opacity: 0.72;
 }
 .chat-urgent,
 .chat-emergency {
@@ -865,14 +927,20 @@ textarea:focus { border-color: var(--accent); }
   .simulator-actions {
     grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr;
   }
   .simulator-actions .btn-primary,
   .simulator-actions .btn-ghost,
   .simulator-actions .btn-danger {
     width: 100%;
     min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-height: 42px;
   }
+}
+@media (max-width: 520px) {
+  .simulator-grid { grid-template-columns: 1fr; }
 }
 .quick-presets {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;

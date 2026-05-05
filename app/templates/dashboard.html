@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/dashboard.css" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=sos-panels-1" />
 </head>
 <body>
   <div class="grain"></div>
@@ -122,6 +122,18 @@
           <button id="resolve-sos" class="btn-confirm" hidden>resolve SOS</button>
         </section>
 
+        <section id="relative-sos-alert" class="relative-sos-alert" hidden>
+          <div>
+            <span class="metric-label">Relative device alert</span>
+            <h2>SOS received</h2>
+            <p id="relative-sos-detail">Emergency escalation is active.</p>
+          </div>
+          <div class="relative-sos-meta">
+            <span id="relative-sos-time">waiting</span>
+            <span id="relative-sos-contact">family notified</span>
+          </div>
+        </section>
+
         <div class="vitals-grid">
           <article class="vital-card">
             <span class="metric-label">Heart rate</span>
@@ -152,7 +164,10 @@
         <!-- Health chat -->
         <section class="card chat-card" id="chat-card" hidden>
           <header class="simulator-head">
-            <h2 class="section-title">Health chat</h2>
+            <div>
+              <h2 class="section-title">AI health chat</h2>
+              <span id="chat-model-status" class="chat-model-status">model waiting</span>
+            </div>
             <button id="chat-share" class="btn-ghost">share summary</button>
           </header>
           <div id="chat-history" class="chat-history"></div>
@@ -371,6 +386,6 @@
     </div>
   </div>
 
-  <script src="/static/dashboard.js"></script>
+  <script src="/static/dashboard.js?v=sos-panels-1"></script>
 </body>
 </html>

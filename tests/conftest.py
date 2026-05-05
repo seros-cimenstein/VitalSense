@@ -51,6 +51,11 @@ def repo() -> InMemoryRepository:
     return InMemoryRepository()
 
 
+@pytest.fixture(autouse=True)
+def _local_chat_provider(monkeypatch):
+    monkeypatch.setenv("VITALSENSE_CHAT_MODEL_PROVIDER", "local")
+
+
 @pytest.fixture
 def notifier() -> ConsoleNotifier:
     return ConsoleNotifier()

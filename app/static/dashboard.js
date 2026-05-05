@@ -89,6 +89,8 @@ let streamHandle = null;
 let countdownHandle = null;
 let allDoctors = [];
 let lastVitalValues = {};
+let chatPending = false;
+let lastRelativeSosEventId = null;
 const STREAM_INTERVAL_MS = 2500;
 
 // element refs
@@ -222,6 +224,7 @@ async function selectPatient(id) {
   if (!p) return;
   activePatient = p;
   lastVitalValues = {};
+  lastRelativeSosEventId = null;
   emptyState.hidden = true;
   patientView.hidden = false;
   thresholdCard.hidden = false;
@@ -266,7 +269,7 @@ async function refreshTimeline() {
   ]);
   if (!events || !records || !status) return;
   markSynced();
-  renderRiskStatus(status);
+  renderRiskStatus(status, events);
   renderTrendChart(records.slice().reverse());
 
   // latest record drives vital cards
@@ -368,7 +371,7 @@ function relativeTime(timestamp) {
   return `${hours}h ago`;
 }
 
-function renderRiskStatus(status) {
+function renderRiskStatus(status, events = []) {
   const panel = $("risk-panel");
   panel.classList.remove("risk-normal", "risk-warning", "risk-critical");
   panel.classList.add(`risk-${status.risk_level}`);
@@ -380,6 +383,35 @@ function renderRiskStatus(status) {
   $("family-state").textContent = `family: ${status.family_notifications_sent}`;
   $("doctor-state").textContent = `doctor: ${status.doctor_notifications_sent}`;
   $("resolve-sos").hidden = !(status.sos_active && canResolveSos());
+  renderRelativeSosAlert(status, events);
+}
+
+function renderRelativeSosAlert(status, events) {
+  const alert = $("relative-sos-alert");
+  if (!alert) return;
+  const familyEvent = events.find((event) => event.type === "family_notified");
+  const sosEvent = events.find((event) => event.type === "sos_triggered");
+  const visible = hasRole("family") && status.sos_active && Boolean(familyEvent);
+  alert.hidden = !visible;
+  if (!visible) {
+    if (!status.sos_active) document.title = "VitalSense — Health Monitor";
+    return;
+  }
+
+  const patientName = activePatient?.name || "the patient";
+  $("relative-sos-detail").textContent =
+    `${patientName} has an active SOS escalation. ${sosEvent?.message || "Check the latest vitals and contact the patient or emergency services."}`;
+  $("relative-sos-time").textContent = `received ${relativeTime(familyEvent.timestamp)}`;
+  $("relative-sos-contact").textContent = familyEvent.message || "family notified";
+  document.title = `SOS · ${patientName}`;
+
+  if (lastRelativeSosEventId !== familyEvent.id) {
+    lastRelativeSosEventId = familyEvent.id;
+    alert.classList.remove("just-updated");
+    void alert.offsetWidth;
+    alert.classList.add("just-updated");
+    window.setTimeout(() => alert.classList.remove("just-updated"), 1200);
+  }
 }
 
 function renderClinicalProfile(patient) {
@@ -427,10 +459,19 @@ function renderChat(messages) {
       history.appendChild(chatBubble(message));
     }
   }
+  if (chatPending) {
+    history.appendChild(chatBubble({
+      role: "assistant",
+      content: "Checking the latest vitals and preparing a reply...",
+      urgency: "routine",
+      metadata: { model_provider: "pending" },
+    }));
+  }
   const latestAssistant = messages
     .slice()
     .reverse()
     .find((message) => message.role === "assistant");
+  updateChatModelStatus(latestAssistant);
   const action = latestAssistant?.metadata?.recommended_action;
   $("chat-trigger-sos").hidden = !(action === "trigger_sos" && canUseTelemetryControls());
   history.scrollTop = history.scrollHeight;
@@ -438,16 +479,40 @@ function renderChat(messages) {
 
 function chatBubble(message) {
   const div = document.createElement("div");
+  const pending = message.metadata?.model_provider === "pending";
   div.className = `chat-message chat-${message.role} chat-${message.urgency || "routine"}`;
+  if (pending) div.classList.add("chat-pending");
   const time = message.created_at ? new Date(message.created_at).toLocaleTimeString() : "";
+  const provider = chatProviderLabel(message.metadata);
   div.innerHTML = `
     <div class="chat-message-head">
       <span>${message.role === "patient" ? "Patient" : "VitalSense"}</span>
-      <span>${time}</span>
+      <span>${provider || time}</span>
     </div>
     <p>${escapeHtml(message.content)}</p>
   `;
   return div;
+}
+
+function updateChatModelStatus(latestAssistant) {
+  const target = $("chat-model-status");
+  if (!target) return;
+  if (chatPending) {
+    target.textContent = "thinking";
+    return;
+  }
+  const label = chatProviderLabel(latestAssistant?.metadata);
+  target.textContent = label || "local triage";
+}
+
+function chatProviderLabel(metadata) {
+  const provider = metadata?.model_provider;
+  const model = metadata?.model_name;
+  if (provider === "gemini") return model || "Gemini";
+  if (provider === "api") return model ? `API ${model}` : "external API";
+  if (provider === "local") return "local triage";
+  if (provider === "pending") return "thinking";
+  return "";
 }
 
 async function sendChatMessage(text) {
@@ -455,19 +520,25 @@ async function sendChatMessage(text) {
   const message = text.trim();
   if (!message) return;
   $("chat-send").disabled = true;
+  $("chat-send").textContent = "sending";
+  chatPending = true;
+  await refreshChat();
   try {
     const result = await api.post(`/chat/${activePatient.id}`, {
       message,
       include_snapshot: true,
     });
     $("chat-input").value = "";
+    chatPending = false;
     await refreshChat();
     await refreshTimeline();
     if (result?.recommended_action === "trigger_sos" && canUseTelemetryControls()) {
       $("chat-trigger-sos").hidden = false;
     }
   } finally {
+    chatPending = false;
     $("chat-send").disabled = false;
+    $("chat-send").textContent = "send";
   }
 }
 

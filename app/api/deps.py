@@ -8,6 +8,7 @@ from app.core import AnomalyDetectionEngine
 from app.db import Repository, get_repository
 from app.auth import create_snapshot_access_token
 from app.services import ConsoleNotifier, HealthChatService, NotificationService, SOSService
+from app.services.health_chat_model import build_health_chat_model_from_env
 from app.services.notification_service import TwilioNotifier
 
 
@@ -53,7 +54,7 @@ def _build_graph() -> tuple[Repository, SOSService, AnomalyDetectionEngine, Heal
         sos,
         verification_notifier=verification_prompt,
     )
-    chat = HealthChatService(repo)
+    chat = HealthChatService(repo, model=build_health_chat_model_from_env())
     return repo, sos, engine, chat
 
 
